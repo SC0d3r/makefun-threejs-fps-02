@@ -2,11 +2,13 @@
 
 **Hold the tide. Plant the charge.**
 
-QUAY 9 is an original night-harbour tactical FPS built with three.js 0.187.0. The player is
-TIDE, a solo attacker on a decommissioned tidal drydock. The full match pits TIDE against three
-RUST security defenders over the A dry dock and the B warehouse. Phase 1 delivers the complete
-core: the map, movement, collision, hitscan gunplay, viewmodels, effects, HUD and render loop.
-Bots, the bomb round loop and the buy economy follow in Phase 2.
+QUAY 9 is an original night-harbour tactical FPS built with three.js 0.187.0. You are TIDE, a
+solo attacker on a decommissioned tidal drydock. Three RUST security bots hold the A dry dock and
+the B warehouse while you push a charge into one of the sites.
+
+Phase 1 built the map, movement, collision, hitscan gunplay, viewmodels, effects, HUD and render
+loop. Phase 2 adds the full match: nav-grid bots with sight and sound, the round and bomb state
+machine, the buy economy, grenades, procedural WebAudio and the staged screenshot scenes.
 
 ## Controls
 
@@ -19,16 +21,21 @@ Bots, the bomb round loop and the buy economy follow in Phase 2.
 | Space | Jump |
 | Left mouse | Fire |
 | R | Reload |
-| 1 / 2 | Primary / sidearm |
-| E | Plant (Phase 2) |
-| G | Grenade (Phase 2) |
-| B | Buy menu (Phase 2) |
+| 1 / 2 | Sidearm / primary |
+| 3 / 4 | Frag / flash charge |
+| G | Throw the selected grenade |
+| B | Open or close the buy menu (buy phase only) |
+| E | Hold to plant at A or B; bots hold E to defuse |
 | Esc | Release pointer lock / pause |
 
-The Phase 1 loadout starts with the Longshore AR and the Marlin .45. The Kestrel SMG and
-Breakwater 12g are fully defined and can be equipped by code; buying them arrives with the
-economy in Phase 2. Three static RUST target dummies stand behind the defender spawn doors so
-gunplay, headshots, hitmarkers, tracers and the kill feed can be tested immediately.
+Weapons are the Marlin .45 sidearm (free), Kestrel SMG ($1250), Longshore AR ($2700) and
+Breakwater 12g ($1800). Armor costs $650, a frag $300 and a flash $200. Everyone starts each
+match with $1900. A round win pays $3000, a loss $1900, a kill $300 and a plant $300, capped at
+$9000. Buy phase is 12 seconds; the live round is 105 seconds; the fuse is 40 seconds.
+
+The first to five round wins takes the match. RUST.WARDEN and RUST.CINDER hold A and B with
+SMGs, and RUST.ROAMER patrols mid with the rifle. They hear footsteps and gunfire, search the
+last known position, and defuse a planted charge if they reach it.
 
 ## Serve locally
 
@@ -52,39 +59,55 @@ three.js 0.187.0.
 
 `main.ts` uses only the Node 22 standard library. It checks that `game/index.html` and both
 vendored three.js files exist, copies `game/` and `screenshots/` into the output directory, and
-writes `dossier.json` with the vendored make.fun `buildDossier` helper.
+writes `dossier.json` with the vendored make.fun `buildDossier` helper. Screenshot bytes are
+embedded as SHA-256-tagged JPEG/PNG entries; source text excludes `game/vendor/`.
 
 ```sh
 MAKEFUN_OUTPUT_DIR=out node main.ts
 ```
 
-The default output directory outside the local harness is `/output`, matching the grader. Do not
-push from the build.
+The default output directory outside the local harness is `/output`, matching the grader.
+
+## Screenshot scenes
+
+The game accepts `?shot=<name>&seed=<n>` and freezes a deterministic frame. The harness captures
+these four, listed in `shots.json`:
+
+| File | Query | Scene |
+| --- | --- | --- |
+| `1-cover.jpg` | `?shot=cover&seed=1` | Planted charge at A, two RUST defenders closing in |
+| `2-firefight.jpg` | `?shot=firefight&seed=1` | Mid-catwalk rifle fight, tracer and muzzle flash |
+| `3-plant.jpg` | `?shot=plant&seed=1` | Crouched mid-plant at A, progress at 64% |
+| `4-buy.jpg` | `?shot=buy&seed=1` | Buy phase with the Longshore AR card focused |
+
+Each scene runs 90 fixed steps to settle the simulation, then writes every visible value
+directly and renders two frames before setting `window.__shotReady = true`. No timers, particles
+or random values continue after that point, so a seed always produces the same frame.
 
 ## Layout
 
 ```text
-game/index.html       HUD DOM and CSS, import map, data-URI favicon
-game/src/config.js    palette, materials, weapon table, economy, map constants
-game/src/util.js      math, seeded RNG, scratch vectors, ray/AABB helpers
+game/index.html       HUD DOM and CSS, buy cards, overlays, import map, favicon
+game/src/config.js    palette, weapon/grenade/economy tables, bot roles, map constants
 game/src/state.js     the single mutable state object
-game/src/input.js     keyboard, mouse, pointer lock
-game/src/map.js       Quay 9 geometry, textures, lights, colliders, shootables
-game/src/player.js    movement, collision, crouch, camera, recoil
-game/src/weapon.js    hitscan, reload, spread, viewmodels
-game/src/effects.js   pooled tracers, sparks, shells, muzzle flash
-game/src/hud.js       readouts, crosshair, hitmarker, feed, overlays, buy cards
-game/src/main.js      boot, fixed-step loop, pointer lock, target dummies
+game/src/input.js     keyboard, mouse, pointer lock, per-step edges
+game/src/util.js      math, seeded RNG, scratch vectors, ray/AABB helpers
+game/src/nav.js       nav grid, A*, line-of-sight smoothing
+game/src/bots.js      RUST bodies, perception, patrol/combat/defuse
+game/src/rounds.js    round machine, bomb, economy, buy list, prompts
+game/src/map.js       Quay 9 geometry, generated textures, lights, colliders
+game/src/player.js    movement, collision, crouch, camera, damage, shake
+game/src/weapon.js    hitscan, pellets, recoil, reload, viewmodels, grenades
+game/src/effects.js   pooled tracers, sparks, shells, explosions, flashes
+game/src/hud.js       readouts, crosshair, hitmarker, feed, overlays, buy states
+game/src/audio.js     procedural WebAudio bank with a silent fallback
+game/src/shot.js      deterministic cover/firefight/plant/buy staging
+game/src/main.js      boot, fixed-step loop, pointer lock, shot dispatch
 main.ts               copy + dossier build
 serve.ts              local static server
+shots.json            the four capture definitions
 ```
 
 The simulation runs at a fixed 60 Hz; rendering only copies state into the camera and renderer.
-All transient effects are preallocated at boot, and the HUD caches its DOM writes.
-
-## Deferred to Phase 2
-
-- Nav grid, A* pathing, patrols and bot perception/combat
-- Round state machine, bomb plant/defuse, score and economy
-- Buy menu purchasing, grenades and audio
-- Full HUD round/match overlays and the `plant` / `buy` screenshot scenes
+All transient effects are preallocated at boot, textures are generated once from a seeded RNG,
+and the HUD caches its DOM writes. There are no external assets, fonts or network requests.
