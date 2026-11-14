@@ -1,146 +1,111 @@
-// Keyboard, mouse and pointer lock. Edge-triggered presses are consumed by the simulation so a
-// fixed-step catch-up cannot fire the same key or click twice.
-export function createInput(canvas, onLockChange = null) {
-  const keys = Object.create(null);
-  const pressed = new Set();
-  const mouse = [false, false, false];
-  const mousePressed = new Set();
-  const state = {
-    keys,
-    mouseDX: 0,
-    mouseDY: 0,
-    locked: false,
-    takeLookX: 0,
-    takeLookY: 0,
+// Keyboard and mouse are captured here; game logic consumes edges once per
+// fixed step so input feels the same at any render rate.
+export function createInput(canvas) {
+  const keys = new Set();
+  const tapped = new Set();
+  const released = new Set();
+  const mouse = { dx: 0, dy: 0, down: false, clicked: false, wheel: 0 };
+  const listeners = { lock: null, unlock: null };
+  let locked = false;
+  let enabled = true;
+
+  const onKeyDown = (event) => {
+    if (!enabled) return;
+    if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Tab', 'ShiftLeft', 'ControlLeft'].includes(event.code)) {
+      event.preventDefault();
+    }
+    if (!keys.has(event.code)) tapped.add(event.code);
+    keys.add(event.code);
+  };
+  const onKeyUp = (event) => {
+    if (keys.delete(event.code)) released.add(event.code);
+  };
+  const onMouseMove = (event) => {
+    if (!locked) return;
+    mouse.dx += event.movementX;
+    mouse.dy += event.movementY;
+  };
+  const onMouseDown = (event) => {
+    if (!enabled) return;
+    if (event.button === 0) {
+      mouse.down = true;
+      mouse.clicked = true;
+    }
+  };
+  const onMouseUp = (event) => {
+    if (event.button === 0) mouse.down = false;
+  };
+  const onWheel = (event) => {
+    if (locked) mouse.wheel += Math.sign(event.deltaY);
+  };
+  const onLockChange = () => {
+    locked = document.pointerLockElement === canvas;
+    if (locked) listeners.lock?.();
+    else listeners.unlock?.();
   };
 
-  const movementKeys = new Set([
-    'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'KeyE', 'KeyR', 'KeyG', 'KeyB',
-    'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'Space', 'Tab',
-    'Digit1', 'Digit2', 'Digit3', 'Digit4',
-  ]);
-
-  function setLocked(locked) {
-    state.locked = locked;
-    if (!locked) {
-      mouse[0] = false;
-      mouse[1] = false;
-      mouse[2] = false;
-      state.mouseDX = 0;
-      state.mouseDY = 0;
-    }
-    if (onLockChange) onLockChange(locked);
-  }
-
-  function onKeyDown(event) {
-    if (event.repeat) {
-      if (movementKeys.has(event.code)) event.preventDefault();
-      return;
-    }
-    keys[event.code] = true;
-    pressed.add(event.code);
-    if (movementKeys.has(event.code)) event.preventDefault();
-  }
-
-  function onKeyUp(event) {
-    keys[event.code] = false;
-    if (movementKeys.has(event.code)) event.preventDefault();
-  }
-
-  function onMouseDown(event) {
-    if (event.button < 3) {
-      mouse[event.button] = true;
-      mousePressed.add(event.button);
-    }
-  }
-
-  function onMouseUp(event) {
-    if (event.button < 3) mouse[event.button] = false;
-  }
-
-  function onMouseMove(event) {
-    if (!state.locked) return;
-    state.mouseDX += event.movementX || 0;
-    state.mouseDY += event.movementY || 0;
-  }
-
-  function onBlur() {
-    for (const code of Object.keys(keys)) keys[code] = false;
-    mouse[0] = false;
-    mouse[1] = false;
-    mouse[2] = false;
-    pressed.clear();
-    mousePressed.clear();
-  }
-
-  function onLockChangeEvent() {
-    setLocked(document.pointerLockElement === canvas);
-  }
-
-  function requestLock() {
-    if (document.pointerLockElement === canvas) return;
-    try {
-      const request = canvas.requestPointerLock();
-      if (request && typeof request.catch === 'function') request.catch(() => {});
-    } catch {
-      // Browsers refuse without a gesture; the next click retries.
-    }
-  }
-
-  function exitLock() {
-    if (document.pointerLockElement === canvas) document.exitPointerLock();
-  }
-
-  function isDown(code) {
-    return keys[code] === true;
-  }
-
-  function consumeKey(code) {
-    if (!pressed.has(code)) return false;
-    pressed.delete(code);
-    return true;
-  }
-
-  function isMouseDown(button) {
-    return mouse[button] === true;
-  }
-
-  function consumeMouse(button) {
-    if (!mousePressed.has(button)) return false;
-    mousePressed.delete(button);
-    return true;
-  }
-
-  function consumeLook() {
-    state.takeLookX = state.mouseDX;
-    state.takeLookY = state.mouseDY;
-    state.mouseDX = 0;
-    state.mouseDY = 0;
-  }
-
-  function endFrame() {
-    pressed.clear();
-    mousePressed.clear();
-  }
-
-  canvas.addEventListener('mousedown', onMouseDown);
-  window.addEventListener('mouseup', onMouseUp);
-  window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
-  window.addEventListener('blur', onBlur);
-  document.addEventListener('pointerlockchange', onLockChangeEvent);
-  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
-
-  Object.assign(state, {
-    requestLock,
-    exitLock,
-    isDown,
-    consumeKey,
-    isMouseDown,
-    consumeMouse,
-    consumeLook,
-    endFrame,
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mouseup', onMouseUp);
+  window.addEventListener('wheel', onWheel, { passive: true });
+  window.addEventListener('blur', () => {
+    keys.clear();
+    mouse.down = false;
   });
-  return state;
+  document.addEventListener('pointerlockchange', onLockChange);
+  document.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  const requestLock = () => {
+    if (!locked) canvas.requestPointerLock?.();
+  };
+  const releaseLock = () => {
+    if (document.pointerLockElement) document.exitPointerLock();
+  };
+
+  return {
+    keys,
+    mouse,
+    get locked() {
+      return locked;
+    },
+    setEnabled(value) {
+      enabled = value;
+      if (!value) {
+        keys.clear();
+        mouse.down = false;
+      }
+    },
+    onLock(handler) {
+      listeners.lock = handler;
+    },
+    onUnlock(handler) {
+      listeners.unlock = handler;
+    },
+    requestLock,
+    releaseLock,
+    isDown(code) {
+      return keys.has(code);
+    },
+    pressed(code) {
+      return tapped.has(code);
+    },
+    released(code) {
+      return released.has(code);
+    },
+    consumeClick() {
+      const hit = mouse.clicked;
+      mouse.clicked = false;
+      return hit;
+    },
+    endStep() {
+      tapped.clear();
+      released.clear();
+      mouse.clicked = false;
+      mouse.dx = 0;
+      mouse.dy = 0;
+      mouse.wheel = 0;
+    },
+  };
 }

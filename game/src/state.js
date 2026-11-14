@@ -1,82 +1,95 @@
-// The one mutable game state. main.js owns it; every system receives it and mutates in place.
-import * as THREE from 'three';
-import { ECONOMY, MAP, PLAYER, ROUND, WEAPONS } from './config.js';
+// The one mutable game object. Math helpers live in util; modules add their own
+// scratch vectors at module scope and write only through this object in step().
 import { mulberry32 } from './util.js';
+import { WEAPONS, ECONOMY, PLAYER, MAP } from './config.js';
 
 export function createState(seed = 1) {
-  const mags = {};
-  const reserves = {};
-  for (const id of Object.keys(WEAPONS)) {
-    mags[id] = WEAPONS[id].mag;
-    reserves[id] = WEAPONS[id].reserve;
-  }
-
-  return {
+  const state = {
     seed,
     rng: mulberry32(seed),
-    mode: 'start',
-    paused: true,
-    shot: null,
-    shotFrame: 0,
-    cameraOverride: null,
     time: 0,
-    round: 1,
-    roundClock: ROUND.liveSeconds,
-    score: { you: 0, rust: 0 },
-    money: ECONOMY.startMoney,
+    mode: 'menu',
+    paused: false,
+    shotMode: false,
+    shotFrozen: false,
+    colliders: [],
+    shootables: [],
+    audio: null,
     player: {
-      pos: new THREE.Vector3(MAP.attackerSpawn.x, MAP.attackerSpawn.y, MAP.attackerSpawn.z),
-      vel: new THREE.Vector3(),
+      pos: { x: MAP.attackerSpawn[0], y: 0, z: MAP.attackerSpawn[1] },
+      vel: { x: 0, y: 0, z: 0 },
       yaw: 0,
       pitch: 0,
-      height: PLAYER.standHeight,
-      eye: PLAYER.standEye,
-      crouched: false,
-      walking: false,
-      grounded: true,
+      height: PLAYER.stand,
+      eye: PLAYER.eye,
+      crouch: 0,
+      onGround: true,
       health: 100,
       armor: 0,
-      groundSpeed: 0,
-      bob: 0,
-      bobAmount: 0,
-      recoilPitch: 0,
-      recoilYaw: 0,
-      recoilPitchVel: 0,
-      recoilYawVel: 0,
-      lookX: 0,
-      lookY: 0,
-      damageFlash: 0,
-      damageYaw: 0,
-      dead: false,
+      alive: true,
+      money: ECONOMY.loss,
+      speed: 0,
+      walk: false,
+      moving: false,
+      deadT: 0,
+      damageDir: 0,
+      flash: 0,
+      grenadeSelect: null,
+      grenades: { frag: 0, flash: 0 },
+      lastDamage: 99,
+      firedAt: 99,
+      stepDist: 0,
+      stepSide: 0,
     },
     weapon: {
-      current: 'longshore',
-      primary: 'longshore',
-      secondary: 'marlin',
-      mags,
-      reserves,
-      owned: { marlin: true, longshore: true, kestrel: false, breakwater: false },
-      reloading: false,
-      reloadLeft: 0,
+      current: 'pistol',
+      primary: null,
+      owned: { pistol: true, smg: false, rifle: false, shotgun: false },
+      ammo: {},
       cooldown: 0,
+      reloading: 0,
       spread: 0,
-      bloom: 0,
     },
+    round: {
+      number: 1,
+      phase: 'menu',
+      timer: 0,
+      fuse: 0,
+      score: [0, 0],
+      result: '',
+      reason: '',
+      ended: 0,
+      plantSite: null,
+      plantProgress: 0,
+      defuseProgress: 0,
+      defusing: false,
+      beep: 0,
+      beepGap: 1,
+      moneyDelta: 0,
+    },
+    bomb: {
+      planted: false,
+      x: 0,
+      z: 0,
+      led: 0,
+    },
+    stats: { kills: 0, plants: 0, shots: 0, hits: 0, rounds: 0 },
     bots: [],
-    targets: [],
-    effects: {
-      hitmarker: 0,
-      damage: 0,
-      damageYaw: 0,
-      feedSerial: 0,
-      feed: [
-        { id: 0, text: '', headshot: false, life: 0 },
-        { id: 0, text: '', headshot: false, life: 0 },
-        { id: 0, text: '', headshot: false, life: 0 },
-      ],
+    feed: [],
+    flags: {
+      buyOpen: false,
+      startOpen: true,
+      roundEnd: false,
+      matchEnd: false,
+      defused: false,
     },
-    stats: { kills: 0, plants: 0, deaths: 0, shots: 0, hits: 0 },
-    settings: { sensitivity: 0.0022, fov: 75 },
-    hud: { prompt: '', locked: false, bombState: 'CHARGE CARRIED' },
+    match: { result: '' },
+    hitMarker: 0,
+    damageFlash: 0,
+    prompt: '',
   };
+  for (const id of Object.keys(WEAPONS)) {
+    state.weapon.ammo[id] = { mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve };
+  }
+  return state;
 }

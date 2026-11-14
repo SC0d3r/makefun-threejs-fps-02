@@ -1,303 +1,227 @@
-// DOM HUD. Readouts are cached so a quiet frame touches no text nodes; transient feedback is
-// driven from the same state the simulation writes.
-import { ECONOMY, WEAPONS } from './config.js';
+// DOM HUD, buy menu and overlays. update() only writes changed readouts.
+import { ECONOMY, GRENADES, WEAPONS } from './config.js';
 import { clamp, formatClock, formatMoney } from './util.js';
 
-export function createHud(state) {
-  const byId = (id) => document.getElementById(id);
-  const hud = byId('hud');
-  const overlayIds = {
-    start: byId('start-overlay'),
-    pause: byId('pause-overlay'),
-    round: byId('round-overlay'),
-    match: byId('match-overlay'),
-  };
+const money = (value) => formatMoney(value).replace('$', '$ ');
 
-  const elements = {
-    timer: byId('round-timer'),
-    bomb: byId('bomb-state'),
-    scoreYou: byId('score-you'),
-    scoreRust: byId('score-rust'),
-    healthValue: byId('health-value'),
-    healthFill: byId('health-fill'),
-    armorValue: byId('armor-value'),
-    armorFill: byId('armor-fill'),
+export function createHud(state, handlers) {
+  const byId = (id) => document.getElementById(id);
+  const els = {
+    timer: byId('timer'),
+    bombState: byId('bombState'),
+    score: byId('score'),
+    health: byId('healthValue'),
+    healthBar: byId('healthBar'),
+    armor: byId('armorValue'),
+    armorBar: byId('armorBar'),
     money: byId('money'),
-    weaponName: byId('weapon-name'),
-    ammoMag: byId('ammo-mag'),
-    ammoReserve: byId('ammo-reserve'),
-    fireMode: byId('fire-mode'),
+    weapon: byId('weaponName'),
+    ammo: byId('ammoValue'),
+    mode: byId('fireMode'),
     prompt: byId('prompt'),
-    killfeed: byId('killfeed'),
     crosshair: byId('crosshair'),
     hitmarker: byId('hitmarker'),
-    vignette: byId('damage-vignette'),
-    damageTick: byId('damage-tick'),
-    buyMoney: byId('buy-money'),
-    buyTimer: byId('buy-timer'),
-    buyCards: byId('buy-cards'),
-    roundResult: byId('round-result'),
-    roundReason: byId('round-reason'),
-    roundMoney: byId('round-money'),
-    roundCountdown: byId('round-countdown'),
-    matchResult: byId('match-result'),
-    matchStats: byId('match-stats'),
+    damage: byId('damage'),
+    damageTick: byId('damageTick'),
+    flash: byId('flash'),
+    feed: [byId('feed0'), byId('feed1'), byId('feed2')],
+    buy: byId('buyMenu'),
+    buyTimer: byId('buyTimer'),
+    buyMoney: byId('buyMoney'),
+    buyScore: byId('buyScore'),
+    buyRound: byId('buyRound'),
+    start: byId('startOverlay'),
+    round: byId('roundOverlay'),
+    roundResult: byId('roundResult'),
+    roundReason: byId('roundReason'),
+    roundMoney: byId('roundMoney'),
+    roundNext: byId('roundNext'),
+    match: byId('matchOverlay'),
+    matchResult: byId('matchResult'),
+    matchStats: byId('matchStats'),
+    pause: byId('pauseOverlay'),
   };
-
-  const cache = {
-    bomb: '',
-    scoreYou: -1,
-    scoreRust: -1,
-    health: -1,
-    armor: -1,
-    money: '',
-    weapon: '',
-    ammo: '',
-    mode: '',
-    prompt: null,
-    gap: -1,
-    hit: false,
-    feed: [-1, -1, -1],
-    feedPhase: [0, 0, 0],
-    timerSec: -1,
-    moneyValue: -1,
-    buyMoneyValue: -1,
-    buySec: -1,
-    damageStage: -1,
-    tickDeg: 999,
+  const cards = Array.from(document.querySelectorAll('.buyCard'));
+  const last = { timer: '', bomb: '', score: '', health: '', armor: '', money: '', ammo: '', weapon: '', mode: '', prompt: '', gap: -1, feed: '' };
+  const setText = (el, key, value) => {
+    if (last[key] === value) return;
+    last[key] = value;
+    if (el) el.textContent = value;
   };
-
-  const feedRows = [];
-  for (let i = 0; i < 3; i++) {
-    const row = document.createElement('div');
-    row.className = 'kill-row';
-    const text = document.createElement('span');
-    text.className = 'kill-text';
-    const tag = document.createElement('span');
-    tag.className = 'kill-tag';
-    tag.textContent = 'HEADSHOT';
-    row.append(text, tag);
-    elements.killfeed.appendChild(row);
-    feedRows.push({ row, text, tag });
-  }
-
-  const cards = [
-    {
-      id: 'longshore', name: WEAPONS.longshore.name, price: WEAPONS.longshore.price,
-      role: 'Long angle, three-tap body', stats: [82, 58, 78],
-    },
-    {
-      id: 'kestrel', name: WEAPONS.kestrel.name, price: WEAPONS.kestrel.price,
-      role: 'Close range, fast burst', stats: [54, 90, 56],
-    },
-    {
-      id: 'breakwater', name: WEAPONS.breakwater.name, price: WEAPONS.breakwater.price,
-      role: 'One-step stop, nine pellets', stats: [95, 26, 38],
-    },
-    {
-      id: 'armor', name: 'BODY ARMOR', price: ECONOMY.armorPrice,
-      role: 'Half damage absorbed', stats: [0, 0, 100],
-    },
-    {
-      id: 'frag', name: 'FRAG CHARGE', price: ECONOMY.fragPrice,
-      role: 'Cooked throw, lethal core', stats: [90, 12, 24],
-    },
-    {
-      id: 'flash', name: 'FLASH CHARGE', price: ECONOMY.flashPrice,
-      role: 'Blinds a held angle', stats: [28, 20, 50],
-    },
-  ];
 
   for (const card of cards) {
-    const article = document.createElement('article');
-    article.className = 'buy-card';
-    article.dataset.item = card.id;
-    const head = document.createElement('div');
-    head.className = 'buy-card-head';
-    const name = document.createElement('span');
-    name.className = 'buy-name';
-    name.textContent = card.name;
-    const price = document.createElement('span');
-    price.className = 'buy-price';
-    price.textContent = `$${formatMoney(card.price)}`;
-    head.append(name, price);
-    const role = document.createElement('p');
-    role.className = 'buy-role';
-    role.textContent = card.role;
-    article.append(head, role);
-    if (card.stats[2] > 0) {
-      const bars = document.createElement('div');
-      bars.className = 'stat-bars';
-      const labels = ['DMG', 'RATE', 'ACC'];
-      for (let i = 0; i < 3; i++) {
-        const line = document.createElement('div');
-        line.className = 'stat-line';
-        const label = document.createElement('span');
-        label.textContent = labels[i];
-        const track = document.createElement('i');
-        const fill = document.createElement('b');
-        fill.style.width = `${card.stats[i]}%`;
-        track.appendChild(fill);
-        line.append(label, track);
-        bars.appendChild(line);
-      }
-      article.appendChild(bars);
-    }
-    elements.buyCards.appendChild(article);
+    card.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (card.disabled) return;
+      handlers.onBuy(card.dataset.item);
+    });
   }
+  byId('startDeploy')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onDeploy();
+  });
+  byId('buyDeploy')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onCloseBuy();
+  });
+  byId('buyClose')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onCloseBuy();
+  });
+  byId('restartBtn')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onRestart();
+  });
+  byId('pauseOverlay')?.addEventListener('click', () => handlers.onResume());
+  byId('buyMenu')?.addEventListener('click', (event) => event.stopPropagation());
 
-  function setText(element, value, key) {
-    if (cache[key] === value) return;
-    cache[key] = value;
-    element.textContent = value;
-  }
-
-  function setOverlay(name) {
-    for (const key of Object.keys(overlayIds)) {
-      overlayIds[key].classList.toggle('is-open', key === name);
-    }
-    hud.classList.toggle('is-playing', name === 'none');
-    if (name !== 'start') {
-      // The start card is a one-way door; later overlays reuse the same panel stack.
-      overlayIds.start.classList.remove('is-open');
-    }
-  }
-
-  function hitmarker(headshot = false) {
-    state.effects.hitmarker = 0.24;
-    elements.hitmarker.classList.toggle('is-headshot', headshot);
-  }
-
-  function pushKill(text, headshot = false) {
-    let oldest = 0;
-    for (let i = 1; i < state.effects.feed.length; i++) {
-      if (state.effects.feed[i].life < state.effects.feed[oldest].life) oldest = i;
-    }
-    const row = state.effects.feed[oldest];
-    row.id = ++state.effects.feedSerial;
-    row.text = text;
-    row.headshot = headshot;
-    row.life = 4;
-  }
-
-  function setPrompt(text) {
-    state.hud.prompt = text;
-  }
-
-  function update(dt) {
+  const buyKey = () => {
     const p = state.player;
-    const w = state.weapon;
+    let key = `${p.money}|${state.round.phase}|${p.armor}|${p.grenades.frag}|${p.grenades.flash}|`;
+    for (const id of Object.keys(WEAPONS)) key += state.weapon.owned[id] ? '1' : '0';
+    return key;
+  };
+  let prevBuyKey = '';
 
-    const timerSec = Math.ceil(state.roundClock);
-    if (cache.timerSec !== timerSec) {
-      cache.timerSec = timerSec;
-      elements.timer.textContent = formatClock(state.roundClock);
+  const updateBuy = () => {
+    if (!els.buy) return;
+    const open = state.round.phase === 'buy' && state.flags.buyOpen;
+    els.buy.classList.toggle('open', open);
+    if (!open) return;
+    setText(els.buyTimer, 'buyTimer', `BUY PHASE ${formatClock(state.round.timer)}`);
+    setText(els.buyMoney, 'buyMoney', money(state.player.money));
+    setText(els.buyScore, 'buyScore', `YOU ${state.round.score[0]} : ${state.round.score[1]} RUST`);
+    setText(els.buyRound, 'buyRound', `ROUND ${state.round.number}`);
+    const key = buyKey();
+    if (key === prevBuyKey) return;
+    prevBuyKey = key;
+    for (const card of cards) {
+      const item = card.dataset.item;
+      let price = 0;
+      let owned = false;
+      if (item === 'armor') {
+        price = ECONOMY.armorPrice;
+        owned = state.player.armor > 0;
+      } else if (item === 'frag' || item === 'flash') {
+        price = GRENADES[item].price;
+        owned = state.player.grenades[item] > 0;
+      } else {
+        price = WEAPONS[item].price;
+        owned = state.weapon.owned[item];
+      }
+      const disabled = owned || state.player.money < price;
+      card.disabled = disabled;
+      card.classList.toggle('owned', owned);
+      card.classList.toggle('poor', !owned && state.player.money < price);
+      card.querySelector('.ownedTag').textContent = owned ? 'OWNED' : disabled ? 'NO FUNDS' : 'BUY';
     }
-    setText(elements.bomb, state.hud.bombState || 'CHARGE CARRIED', 'bomb');
-    if (cache.scoreYou !== state.score.you) {
-      cache.scoreYou = state.score.you;
-      elements.scoreYou.textContent = String(state.score.you);
-    }
-    if (cache.scoreRust !== state.score.rust) {
-      cache.scoreRust = state.score.rust;
-      elements.scoreRust.textContent = String(state.score.rust);
-    }
+  };
 
-    const health = Math.round(p.health);
-    if (cache.health !== health) {
-      cache.health = health;
-      elements.healthValue.textContent = String(health);
-      elements.healthFill.style.width = `${clamp(health, 0, 100)}%`;
-      elements.healthFill.classList.toggle('is-low', health <= 30);
-    }
-    const armor = Math.round(p.armor);
-    if (cache.armor !== armor) {
-      cache.armor = armor;
-      elements.armorValue.textContent = String(armor);
-      elements.armorFill.style.width = `${clamp(armor, 0, 100)}%`;
-    }
-    if (cache.moneyValue !== state.money) {
-      cache.moneyValue = state.money;
-      elements.money.textContent = `$ ${formatMoney(state.money)}`;
-    }
-
-    const def = WEAPONS[w.current];
-    setText(elements.weaponName, def.name, 'weapon');
-    setText(elements.ammoMag, String(w.mags[def.id]), 'ammo');
-    const reserve = String(w.reserves[def.id]);
-    if (elements.ammoReserve.textContent !== reserve) elements.ammoReserve.textContent = reserve;
-    setText(elements.fireMode, w.reloading ? 'RELOADING' : def.fireMode, 'mode');
-
-    const gap = Math.round(6 + w.spread * 900);
-    if (cache.gap !== gap) {
-      cache.gap = gap;
-      elements.crosshair.style.setProperty('--gap', `${gap}px`);
-    }
-
-    const hit = state.effects.hitmarker > 0;
-    if (cache.hit !== hit) {
-      cache.hit = hit;
-      elements.hitmarker.classList.toggle('is-active', hit);
+  const update = (dt) => {
+    const r = state.round;
+    const p = state.player;
+    if (state.hitMarker > 0) state.hitMarker = Math.max(0, state.hitMarker - dt);
+    if (state.damageFlash > 0) state.damageFlash = Math.max(0, state.damageFlash - dt * 2.4);
+    for (let i = state.feed.length - 1; i >= 0; i -= 1) {
+      state.feed[i].t -= dt;
+      if (state.feed[i].t <= 0) state.feed.splice(i, 1);
     }
 
-    state.effects.damage = Math.max(0, state.effects.damage - dt * 2.1);
-    const damage = clamp(p.damageFlash * 0.9 + state.effects.damage * 0.45, 0, 0.92);
-    const damageStage = Math.round(damage * 20);
-    if (cache.damageStage !== damageStage) {
-      cache.damageStage = damageStage;
-      elements.vignette.style.opacity = String(damageStage / 20);
-      elements.damageTick.style.opacity = damageStage > 1 ? '0.85' : '0';
+    let timeText = formatClock(r.timer);
+    if (r.phase === 'buy') timeText = formatClock(r.timer);
+    if (r.phase === 'matchEnd') timeText = '--:--';
+    setText(els.timer, 'timer', timeText);
+    let bombText = 'CHARGE CARRIED';
+    if (r.phase === 'buy') bombText = 'BUY PHASE';
+    else if (r.phase === 'planted') bombText = `CHARGE PLANTED ${formatClock(r.fuse)}`;
+    else if (r.phase === 'ended') bombText = r.result;
+    else if (r.phase === 'matchEnd') bombText = state.match.result;
+    setText(els.bombState, 'bomb', bombText);
+
+    setText(els.score, 'score', `${r.score[0]} : ${r.score[1]}`);
+    setText(els.health, 'health', String(Math.max(0, Math.ceil(p.health))));
+    setText(els.armor, 'armor', String(Math.max(0, Math.ceil(p.armor))));
+    if (els.healthBar) els.healthBar.style.width = `${clamp(p.health, 0, 100)}%`;
+    if (els.armorBar) els.armorBar.style.width = `${clamp(p.armor, 0, 50) * 2}%`;
+    setText(els.money, 'money', money(p.money));
+
+    const def = WEAPONS[state.weapon.current];
+    const ammo = state.weapon.ammo[state.weapon.current];
+    if (p.grenadeSelect) {
+      const g = GRENADES[p.grenadeSelect];
+      setText(els.weapon, 'weapon', g.name);
+      setText(els.ammo, 'ammo', `x${p.grenades[p.grenadeSelect]}`);
+      setText(els.mode, 'mode', 'G TO THROW');
+    } else {
+      setText(els.weapon, 'weapon', def.name);
+      setText(els.ammo, 'ammo', `${ammo.mag} / ${ammo.reserve}`);
+      setText(els.mode, 'mode', def.auto ? 'AUTO' : def.pellets > 1 ? 'PUMP' : 'SEMI');
     }
-    if (damageStage > 1) {
-      const deg = Math.round((state.effects.damageYaw * 180) / Math.PI);
-      if (cache.tickDeg !== deg) {
-        cache.tickDeg = deg;
-        elements.damageTick.style.transform = `translate(-50%, -50%) rotate(${deg}deg)`;
+
+    let prompt = state.prompt;
+    if (state.round.phase === 'buy' && state.flags.buyOpen) prompt = 'PRESS B TO CLOSE';
+    if (state.round.phase === 'planted' && r.defusing) prompt = 'DEFUSE IN PROGRESS';
+    if (!p.grenadeSelect && ammo.mag <= 0 && (r.phase === 'live' || r.phase === 'planted') && !r.defusing && r.plantProgress <= 0) {
+      prompt = state.weapon.reloading > 0 ? 'RELOADING' : 'RELOAD [R]';
+    }
+    if (r.phase === 'ended' || r.phase === 'matchEnd') prompt = '';
+    setText(els.prompt, 'prompt', prompt);
+
+    const gap = Math.round(clamp(6 + (state.crosshairGap || 0) * 900, 6, 42));
+    if (gap !== last.gap && els.crosshair) {
+      last.gap = gap;
+      els.crosshair.style.setProperty('--gap', `${gap}px`);
+    }
+    if (els.hitmarker) els.hitmarker.classList.toggle('on', state.hitMarker > 0);
+    if (els.damage) els.damage.style.opacity = String(clamp(state.damageFlash, 0, 1) * 0.7);
+    if (els.damageTick) {
+      const deg = (p.damageDir * 180) / Math.PI;
+      els.damageTick.style.transform = `translate(-50%, -100%) rotate(${deg.toFixed(1)}deg)`;
+      els.damageTick.style.opacity = String(clamp(state.damageFlash, 0, 1) * 0.9);
+    }
+    if (els.flash) els.flash.style.opacity = String(clamp(p.flash / 2.5, 0, 1) * 0.88);
+
+    for (let i = 0; i < 3; i += 1) {
+      const row = els.feed[i];
+      if (!row) continue;
+      const entry = state.feed[state.feed.length - 1 - i];
+      const key = entry ? `${entry.text}|${entry.t.toFixed(1)}` : '';
+      if (row.dataset.key === key) continue;
+      row.dataset.key = key;
+      row.classList.toggle('visible', !!entry);
+      row.classList.toggle('head', !!entry && entry.head);
+      row.textContent = entry ? entry.text : '';
+      row.style.opacity = entry ? String(clamp(entry.t, 0, 1)) : '0';
+    }
+
+    if (els.start) els.start.classList.toggle('open', state.flags.startOpen && !state.shotMode);
+    if (els.round) {
+      els.round.classList.toggle('open', state.flags.roundEnd);
+      if (state.flags.roundEnd) {
+        setText(els.roundResult, 'roundResult', r.result);
+        setText(els.roundReason, 'roundReason', r.reason);
+        setText(els.roundMoney, 'roundMoney', `${r.moneyDelta >= 0 ? '+' : ''}${money(r.moneyDelta)}`);
+        setText(els.roundNext, 'roundNext', `NEXT ROUND IN ${Math.max(0, Math.ceil(r.ended))}`);
       }
     }
-
-    const prompt = state.hud.prompt || '';
-    if (cache.prompt !== prompt) {
-      cache.prompt = prompt;
-      elements.prompt.textContent = prompt;
-      elements.prompt.classList.toggle('is-visible', prompt.length > 0);
-    }
-
-    for (let i = 0; i < state.effects.feed.length; i++) {
-      const data = state.effects.feed[i];
-      const row = feedRows[i];
-      if (data.life > 0) data.life = Math.max(0, data.life - dt);
-      const phase = data.life <= 0 ? 0 : data.life < 1 ? 2 : 1;
-      if (cache.feed[i] !== data.id || cache.feedPhase[i] !== phase) {
-        cache.feed[i] = data.id;
-        cache.feedPhase[i] = phase;
-        row.text.textContent = data.text;
-        row.tag.classList.toggle('is-headshot', data.headshot);
-        row.row.classList.toggle('is-open', phase > 0);
-        row.row.classList.toggle('is-fading', phase === 2);
+    if (els.match) {
+      els.match.classList.toggle('open', state.flags.matchEnd);
+      if (state.flags.matchEnd) {
+        setText(els.matchResult, 'matchResult', state.match.result);
+        const acc = state.stats.shots > 0 ? Math.round((state.stats.hits / state.stats.shots) * 100) : 0;
+        setText(
+          els.matchStats,
+          'matchStats',
+          `ROUNDS ${state.stats.rounds}   KILLS ${state.stats.kills}   PLANTS ${state.stats.plants}   ACCURACY ${acc}%`,
+        );
       }
     }
-
-    if (cache.buyMoneyValue !== state.money) {
-      cache.buyMoneyValue = state.money;
-      elements.buyMoney.textContent = `$ ${formatMoney(state.money)}`;
+    if (els.pause) {
+      const paused = state.paused && state.mode === 'playing' && !state.flags.startOpen && !state.flags.roundEnd && !state.flags.matchEnd && !state.shotMode;
+      els.pause.classList.toggle('open', paused);
     }
-    const buySec = Math.ceil(state.buyClock ?? 12);
-    if (cache.buySec !== buySec) {
-      cache.buySec = buySec;
-      elements.buyTimer.textContent = formatClock(buySec);
-    }
+    updateBuy();
+  };
 
-    elements.roundResult.textContent = state.hud.roundResult || 'ROUND WON';
-    elements.roundReason.textContent = state.hud.roundReason || 'CHARGE DETONATED';
-    elements.roundMoney.textContent = state.hud.roundMoney || '+ $3,000';
-    elements.roundCountdown.textContent = state.hud.roundCountdown || 'NEXT ROUND IN 4';
-    elements.matchResult.textContent = state.hud.matchResult || 'MATCH WON';
-    elements.matchStats.textContent = state.hud.matchStats || 'ROUNDS 5  ·  KILLS 0  ·  PLANTS 0  ·  ACCURACY 0%';
-  }
-
-  setOverlay('start');
-  update(0);
-
-  return { update, setOverlay, setPrompt, hitmarker, pushKill };
+  return { update, updateBuyReady: () => (prevBuyKey = '') };
 }
