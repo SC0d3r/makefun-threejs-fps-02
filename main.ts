@@ -1,32 +1,57 @@
-// A working threejs-fps-01 entry (Node 22, standard library only): the game is this directory's
-// game/ folder, plain static files the browser loads as ES modules with three.js from an import
-// map, and the program hands it in. It copies game/ and screenshots/ from beside this file to
-// /output and writes /output/dossier.json, the summary the judge reads, with the vendored make.fun
-// library. A starting point, not a winner: a grey room, one rifle and four targets that drop when
-// shot. Build your game, put your PNG or JPEG screenshots in screenshots/ (the first by name is
-// the cover) and run it.
-//
-// Serve it locally with `node serve.ts`, then open http://localhost:8080.
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+// QUAY 9 build entry (Node 22, standard library only).
+// Copies the playable static game and its renders into the output directory, then asks the
+// vendored make.fun helper for the canonical dossier the gate compares byte for byte.
+// Usage: MAKEFUN_OUTPUT_DIR=out node main.ts
+import { cpSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-threejs.ts';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const ROOT = dirname(fileURLToPath(import.meta.url));
+const OUTPUT = resolve(ROOT, process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
 
-mkdirSync(out, { recursive: true });
-cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
-mkdirSync(join(out, 'screenshots'), { recursive: true });
-if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
+const CAPS = {
+  text_max_bytes: 163840,
+  screenshots: { max: 4, max_bytes: 262144 },
+  game_max_files: 993,
+  game_max_bytes: 50331648,
+};
 
-// The scorer's own caps (reference/gate.json): only text_max_bytes shapes the bytes; the others refuse an entry the
-// scorer would refuse (more than 4 screenshots or one over 256 KiB; more than 993 files in game/ or 48 MiB of game
-// files, in all: game/ counts beside /output's own 1000-entry cap, its screenshots/ and dossier.json).
-writeFileSync(
-  join(out, 'dossier.json'),
-  buildDossier(out, { text_max_bytes: 163840, screenshots: { max: 4, max_bytes: 262144 }, game_max_files: 993, game_max_bytes: 50331648 }),
-);
+function fail(message: string): never {
+  console.error(`main.ts: ${message}`);
+  process.exit(1);
+}
+
+function requireFile(path: string): void {
+  let stats;
+  try {
+    stats = statSync(path);
+  } catch {
+    fail(`missing required file ${path}`);
+  }
+  if (!stats.isFile()) fail(`required path is not a file: ${path}`);
+}
+
+function main(): void {
+  if (OUTPUT === ROOT) fail('MAKEFUN_OUTPUT_DIR must not be the repository root');
+
+  const required = [
+    'game/index.html',
+    'game/vendor/three/three.module.min.js',
+    'game/vendor/three/three.core.min.js',
+  ];
+  for (const relative of required) requireFile(join(ROOT, relative));
+  if (!existsSync(join(ROOT, 'screenshots'))) fail('missing screenshots/ directory');
+
+  mkdirSync(OUTPUT, { recursive: true });
+  cpSync(join(ROOT, 'game'), join(OUTPUT, 'game'), { recursive: true });
+  mkdirSync(join(OUTPUT, 'screenshots'), { recursive: true });
+  cpSync(join(ROOT, 'screenshots'), join(OUTPUT, 'screenshots'), { recursive: true });
+
+  const dossier = buildDossier(OUTPUT, CAPS);
+  writeFileSync(join(OUTPUT, 'dossier.json'), dossier);
+  console.log(`copied game/ and screenshots/ to ${OUTPUT}`);
+  console.log(`wrote ${join(OUTPUT, 'dossier.json')} (${dossier.byteLength} bytes)`);
+}
+
+main();

@@ -1,182 +1,632 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Greybox Range: a three.js FPS starter</title>
-<style>
-  /* Look plan: canvas, surface, hairline, ink, muted and one accent. Every colour below is one of the six. */
-  :root {
-    --canvas: #14161a;
-    --surface: #1e2228;
-    --hairline: #2c323a;
-    --ink: #e9e6df;
-    --muted: #98a0a8;
-    --accent: #f0a830;
-    --radius-panel: 4px;
-    --radius-control: 8px;
-    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0;
-    height: 100%;
-    overflow: hidden;
-    background: var(--canvas);
-    color: var(--ink);
-    font-family: var(--font-ui);
-  }
-  #game, #game canvas { position: fixed; inset: 0; display: block; }
-  #hud { position: fixed; inset: 0; pointer-events: none; }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070d16">
+  <title>QUAY 9 — Hold the tide. Plant the charge.</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23070d16'/%3E%3Cpath d='M10 50V14h8v28h22v8z' fill='%23ffb15c'/%3E%3Cpath d='M34 14h20v8H40v7h12v8H40v13h-6z' fill='%235fd6d0'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --night: #070d16;
+      --deep: #0e1722;
+      --concrete: #2b333b;
+      --steel: #4a5a66;
+      --rust: #b4552d;
+      --sodium: #ffb15c;
+      --cyan: #5fd6d0;
+      --paper: #e8e2d4;
+      --danger: #e5483c;
+      --ui: "Bahnschrift", "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+      --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--night);
+      color: var(--paper);
+      font-family: var(--ui);
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+    body { cursor: default; }
+    canvas { display: block; width: 100%; height: 100%; outline: none; }
 
-  #crosshair { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); }
-  #crosshair i { position: absolute; background: var(--ink); opacity: .85; }
-  #crosshair i:nth-child(1) { left: 10px; top: 0; width: 2px; height: 7px; }
-  #crosshair i:nth-child(2) { left: 10px; bottom: 0; width: 2px; height: 7px; }
-  #crosshair i:nth-child(3) { top: 10px; left: 0; height: 2px; width: 7px; }
-  #crosshair i:nth-child(4) { top: 10px; right: 0; height: 2px; width: 7px; }
+    #hud {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+    }
+    #hud::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(7, 13, 22, 0.55) 0%, transparent 14%, transparent 78%, rgba(7, 13, 22, 0.52) 100%),
+        radial-gradient(ellipse at center, transparent 58%, rgba(7, 13, 22, 0.36) 100%);
+      pointer-events: none;
+    }
 
-  #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; transition: opacity 90ms linear; }
-  #hitmarker.on { opacity: 1; }
-  #hitmarker i { position: absolute; background: var(--accent); }
-  #hitmarker i:nth-child(1) { left: 12px; top: 0; width: 2px; height: 8px; }
-  #hitmarker i:nth-child(2) { left: 12px; bottom: 0; width: 2px; height: 8px; }
-  #hitmarker i:nth-child(3) { top: 12px; left: 0; height: 2px; width: 8px; }
-  #hitmarker i:nth-child(4) { top: 12px; right: 0; height: 2px; width: 8px; }
+    #topbar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: start;
+      padding: 18px 30px 12px;
+      background: linear-gradient(180deg, rgba(7, 13, 22, 0.92), rgba(7, 13, 22, 0));
+      border-bottom: 1px solid rgba(232, 226, 212, 0.12);
+    }
+    #topbar::after {
+      content: "";
+      position: absolute;
+      left: 30px;
+      bottom: -1px;
+      width: 132px;
+      height: 3px;
+      background: repeating-linear-gradient(135deg, var(--sodium) 0 10px, transparent 10px 20px);
+      opacity: 0.85;
+    }
+    .brand { display: flex; flex-direction: column; gap: 1px; }
+    .brand-title {
+      font-size: 26px;
+      font-weight: 900;
+      line-height: 0.95;
+      letter-spacing: 0.22em;
+      color: var(--paper);
+    }
+    .brand-sub {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.32em;
+      color: var(--cyan);
+      opacity: 0.9;
+    }
+    .round-centre { text-align: center; min-width: 210px; }
+    #round-timer {
+      display: block;
+      font-family: var(--mono);
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      color: var(--paper);
+    }
+    #bomb-state {
+      display: block;
+      margin-top: 6px;
+      font-size: 9px;
+      letter-spacing: 0.28em;
+      color: var(--sodium);
+      opacity: 0.88;
+    }
+    .scoreline {
+      justify-self: end;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding-top: 4px;
+      font-family: var(--mono);
+      font-size: 14px;
+      letter-spacing: 0.1em;
+    }
+    .scoreline b { font-size: 24px; font-weight: 700; }
+    .scoreline .you b { color: var(--sodium); }
+    .scoreline .rust b { color: var(--cyan); }
+    .scoreline .dot { color: var(--steel); }
 
-  #ammo {
-    position: fixed;
-    right: 32px;
-    bottom: 24px;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    font-family: var(--font-readout);
-    font-size: 56px;
-    line-height: 1;
-    letter-spacing: -0.03em;
-    color: var(--ink);
-  }
-  #ammo.empty #ammo-mag { color: var(--accent); }
-  #ammo-reserve { font-size: 16px; letter-spacing: -0.01em; color: var(--muted); }
+    .hud-panel {
+      position: absolute;
+      bottom: 24px;
+      min-width: 230px;
+      padding: 12px 15px 11px;
+      background: linear-gradient(180deg, rgba(14, 23, 34, 0.76), rgba(7, 13, 22, 0.9));
+      border-top: 1px solid rgba(232, 226, 212, 0.2);
+      border-left: 3px solid var(--rust);
+    }
+    #player-panel { left: 28px; }
+    #weapon-panel {
+      right: 28px;
+      text-align: right;
+      border-left: 0;
+      border-right: 3px solid var(--cyan);
+    }
+    .stat-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+    .stat-label { font-size: 9px; letter-spacing: 0.3em; color: var(--steel); }
+    .stat-value { font-family: var(--mono); font-size: 24px; font-weight: 700; line-height: 1; }
+    .meter {
+      position: relative;
+      height: 3px;
+      margin: 5px 0 9px;
+      background: rgba(232, 226, 212, 0.12);
+      overflow: hidden;
+    }
+    .meter i {
+      display: block;
+      height: 100%;
+      width: 100%;
+      background: var(--paper);
+      transition: width 120ms linear;
+    }
+    #health-fill { background: var(--sodium); }
+    #health-fill.is-low { background: var(--danger); }
+    #armor-fill { background: var(--cyan); }
+    #money {
+      margin-top: 7px;
+      font-family: var(--mono);
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--sodium);
+    }
+    #weapon-name {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      color: var(--paper);
+      opacity: 0.92;
+    }
+    .ammo-line {
+      display: flex;
+      align-items: baseline;
+      justify-content: flex-end;
+      gap: 7px;
+      margin-top: 2px;
+      font-family: var(--mono);
+    }
+    #ammo-mag { font-size: 40px; font-weight: 700; line-height: 0.95; color: var(--paper); }
+    .ammo-slash { font-size: 20px; color: var(--steel); }
+    #ammo-reserve { font-size: 18px; color: var(--steel); }
+    #fire-mode {
+      margin-top: 5px;
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.24em;
+      color: var(--cyan);
+    }
 
-  #score {
-    position: fixed;
-    left: 32px;
-    bottom: 24px;
-    font-family: var(--font-readout);
-    font-size: 14px;
-    color: var(--muted);
-  }
-  #score b { color: var(--ink); font-weight: 500; }
+    #prompt {
+      position: absolute;
+      left: 50%;
+      bottom: 118px;
+      transform: translateX(-50%);
+      min-width: 280px;
+      padding: 7px 18px 6px;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      color: var(--paper);
+      background: rgba(7, 13, 22, 0.78);
+      border-left: 2px solid var(--sodium);
+      border-right: 2px solid var(--sodium);
+      opacity: 0;
+      transition: opacity 120ms linear;
+    }
+    #prompt.is-visible { opacity: 0.94; }
 
-  .overlay {
-    position: fixed;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    padding: 24px;
-    background: color-mix(in srgb, var(--canvas) 86%, transparent);
-  }
-  .overlay[hidden] { display: none; }
-  .panel {
-    width: min(420px, 100%);
-    padding: 32px;
-    background: var(--surface);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-panel);
-  }
-  .panel h1 {
-    margin: 0 0 8px;
-    font-size: 32px;
-    line-height: 1.15;
-    font-weight: 500;
-    letter-spacing: -0.02em;
-    text-wrap: balance;
-  }
-  .panel p {
-    margin: 0 0 24px;
-    max-width: 46ch;
-    font-size: 16px;
-    line-height: 1.5;
-    color: var(--muted);
-    text-wrap: pretty;
-  }
-  #play {
-    font: inherit;
-    font-weight: 500;
-    padding: 12px 16px;
-    white-space: nowrap;
-    border: 1px solid var(--accent);
-    border-radius: var(--radius-control);
-    background: var(--accent);
-    color: var(--canvas);
-    cursor: pointer;
-    transition: background-color 120ms ease;
-  }
-  #play:hover { background: var(--ink); border-color: var(--ink); }
-  #play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #killfeed {
+      position: absolute;
+      top: 92px;
+      right: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      align-items: flex-end;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+    }
+    .kill-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 9px;
+      background: rgba(7, 13, 22, 0.78);
+      border-right: 2px solid var(--cyan);
+      opacity: 0;
+      transform: translateX(8px);
+      transition: opacity 140ms linear, transform 140ms ease-out;
+    }
+    .kill-row.is-open { opacity: 0.95; transform: translateX(0); }
+    .kill-row.is-fading { opacity: 0.3; }
+    .kill-tag {
+      display: none;
+      padding: 1px 4px;
+      color: var(--sodium);
+      border: 1px solid rgba(255, 177, 92, 0.55);
+      font-size: 8px;
+    }
+    .kill-tag.is-headshot { display: inline-block; }
 
-  .keys {
-    margin: 24px 0 0;
-    padding: 0;
-    list-style: none;
-    display: grid;
-    gap: 8px;
-    font-size: 14px;
-    color: var(--muted);
-  }
-  .keys li { display: flex; align-items: center; gap: 8px; }
-  .keys kbd {
-    min-width: 24px;
-    padding: 2px 6px;
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-panel);
-    font-family: var(--font-readout);
-    font-size: 12px;
-    color: var(--ink);
-    text-align: center;
-  }
+    #crosshair {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 0;
+      height: 0;
+      --gap: 12px;
+      opacity: 0.95;
+      transition: opacity 160ms linear;
+    }
+    #hud:not(.is-playing) #crosshair { opacity: 0.14; }
+    #crosshair i {
+      position: absolute;
+      display: block;
+      background: var(--paper);
+      box-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+    }
+    .ch-top { width: 2px; height: 8px; left: -1px; bottom: var(--gap); }
+    .ch-bottom { width: 2px; height: 8px; left: -1px; top: var(--gap); }
+    .ch-left { width: 8px; height: 2px; top: -1px; right: var(--gap); }
+    .ch-right { width: 8px; height: 2px; top: -1px; left: var(--gap); }
+    #crosshair-dot {
+      position: absolute;
+      left: -1px;
+      top: -1px;
+      width: 2px;
+      height: 2px;
+      background: var(--sodium);
+      box-shadow: 0 0 3px rgba(255, 177, 92, 0.8);
+    }
 
-  @media (prefers-reduced-motion: reduce) {
-    #hitmarker, #play { transition-duration: 0.01ms; }
-  }
-</style>
+    #hitmarker {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) scale(1.3);
+      font-family: var(--mono);
+      font-size: 32px;
+      font-weight: 300;
+      line-height: 1;
+      color: var(--paper);
+      opacity: 0;
+      transition: opacity 80ms linear;
+      text-shadow: 0 0 5px rgba(0, 0, 0, 0.9);
+    }
+    #hitmarker.is-active { opacity: 0.96; transform: translate(-50%, -50%) scale(1); }
+    #hitmarker.is-headshot { color: var(--danger); }
+
+    #damage-vignette {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      background: radial-gradient(ellipse at center, transparent 32%, rgba(229, 72, 60, 0.24) 66%, rgba(229, 72, 60, 0.78) 100%);
+      transition: opacity 120ms linear;
+    }
+    #damage-tick {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 176px;
+      height: 176px;
+      margin: 0;
+      border: 2px solid transparent;
+      border-top-color: var(--danger);
+      border-radius: 50%;
+      opacity: 0;
+      transform: translate(-50%, -50%);
+      transition: opacity 120ms linear;
+    }
+
+    .screen {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 30px;
+      background:
+        linear-gradient(90deg, rgba(7, 13, 22, 0.94) 0%, rgba(7, 13, 22, 0.68) 52%, rgba(7, 13, 22, 0.92) 100%),
+        repeating-linear-gradient(135deg, rgba(255, 177, 92, 0.035) 0 1px, transparent 1px 22px);
+      pointer-events: auto;
+    }
+    .screen.is-open { display: flex; }
+    .screen::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 7px;
+      background: repeating-linear-gradient(135deg, rgba(255, 177, 92, 0.85) 0 14px, rgba(7, 13, 22, 0.85) 14px 28px);
+      opacity: 0.55;
+    }
+
+    .start-card { width: min(940px, 94vw); display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 42px; align-items: end; }
+    .start-kicker {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.36em;
+      color: var(--cyan);
+      margin-bottom: 14px;
+    }
+    .start-title {
+      margin: 0;
+      font-size: clamp(72px, 11vw, 148px);
+      font-weight: 900;
+      line-height: 0.78;
+      letter-spacing: 0.03em;
+      color: var(--paper);
+    }
+    .start-title span { color: var(--sodium); }
+    .start-tagline {
+      margin: 22px 0 0;
+      max-width: 430px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      color: var(--paper);
+      opacity: 0.82;
+    }
+    .start-rule {
+      width: 190px;
+      height: 4px;
+      margin: 24px 0 20px;
+      background: repeating-linear-gradient(135deg, var(--rust) 0 12px, transparent 12px 22px);
+    }
+    .start-note { max-width: 440px; font-family: var(--mono); font-size: 10px; line-height: 1.7; color: var(--steel); letter-spacing: 0.08em; }
+    .start-side { align-self: center; }
+    .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; margin-bottom: 24px; }
+    .control { display: flex; align-items: center; gap: 9px; font-size: 10px; letter-spacing: 0.14em; color: var(--paper); opacity: 0.82; }
+    kbd {
+      min-width: 30px;
+      padding: 4px 6px;
+      font-family: var(--mono);
+      font-size: 9px;
+      text-align: center;
+      letter-spacing: 0.04em;
+      color: var(--paper);
+      border: 1px solid rgba(232, 226, 212, 0.26);
+      background: rgba(74, 90, 102, 0.16);
+    }
+    .deploy {
+      width: 100%;
+      padding: 16px 18px 15px;
+      border: 0;
+      border-top: 3px solid var(--night);
+      background: var(--sodium);
+      color: var(--night);
+      font-family: var(--ui);
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 0 0 1px rgba(255, 177, 92, 0.5);
+      transition: background 120ms linear, transform 120ms linear;
+    }
+    .deploy:hover { background: #ffc57f; transform: translateY(-1px); }
+    .deploy:active { transform: translateY(0); }
+
+    .pause-card { text-align: center; }
+    .pause-title { font-size: clamp(48px, 8vw, 92px); font-weight: 900; letter-spacing: 0.12em; line-height: 1; }
+    .pause-sub { margin-top: 14px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.28em; color: var(--cyan); }
+    .pause-hint { margin-top: 26px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; color: var(--steel); }
+
+    .result-card { width: min(620px, 90vw); text-align: center; }
+    .result-word { font-size: clamp(46px, 7vw, 78px); font-weight: 900; letter-spacing: 0.14em; line-height: 1; color: var(--sodium); }
+    .result-reason { margin-top: 12px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.26em; color: var(--paper); opacity: 0.8; }
+    .result-money { margin-top: 24px; font-family: var(--mono); font-size: 28px; color: var(--cyan); }
+    .result-countdown { margin-top: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.24em; color: var(--steel); }
+    .match-stats { margin-top: 20px; font-family: var(--mono); font-size: 11px; line-height: 1.8; letter-spacing: 0.12em; color: var(--paper); opacity: 0.82; }
+
+    #buy-menu {
+      z-index: 50;
+      align-items: stretch;
+      justify-content: center;
+      background: rgba(7, 13, 22, 0.94);
+      padding: 22px;
+    }
+    .buy-frame {
+      width: min(1020px, 96vw);
+      display: flex;
+      flex-direction: column;
+      border: 1px solid rgba(232, 226, 212, 0.18);
+      background: linear-gradient(180deg, rgba(14, 23, 34, 0.92), rgba(7, 13, 22, 0.98));
+    }
+    .buy-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 18px 22px;
+      border-bottom: 1px solid rgba(232, 226, 212, 0.14);
+      background: linear-gradient(90deg, rgba(255, 177, 92, 0.08), transparent 42%);
+    }
+    .buy-title { font-size: 25px; font-weight: 900; letter-spacing: 0.22em; }
+    .buy-title em { font-style: normal; color: var(--sodium); }
+    .buy-meta { display: flex; gap: 30px; font-family: var(--mono); font-size: 13px; letter-spacing: 0.1em; }
+    #buy-money { color: var(--sodium); }
+    #buy-timer { color: var(--cyan); }
+    .buy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px 22px; overflow: auto; }
+    .buy-card {
+      padding: 13px 14px 12px;
+      border: 1px solid rgba(232, 226, 212, 0.14);
+      border-left: 2px solid var(--steel);
+      background: rgba(74, 90, 102, 0.07);
+    }
+    .buy-card:hover { border-left-color: var(--sodium); background: rgba(255, 177, 92, 0.055); }
+    .buy-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .buy-name { font-size: 14px; font-weight: 700; letter-spacing: 0.14em; }
+    .buy-price { font-family: var(--mono); font-size: 13px; color: var(--sodium); }
+    .buy-role { margin: 5px 0 9px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; color: var(--steel); }
+    .stat-bars { display: flex; flex-direction: column; gap: 3px; }
+    .stat-line { display: grid; grid-template-columns: 38px 1fr; align-items: center; gap: 8px; font-family: var(--mono); font-size: 8px; color: var(--steel); }
+    .stat-line i { display: block; height: 3px; background: rgba(232, 226, 212, 0.1); }
+    .stat-line b { display: block; height: 100%; background: var(--cyan); opacity: 0.7; }
+    .buy-foot {
+      padding: 11px 22px;
+      border-top: 1px solid rgba(232, 226, 212, 0.14);
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      color: var(--steel);
+      text-align: right;
+    }
+    .play-again {
+      margin-top: 26px;
+      padding: 14px 26px;
+      border: 1px solid var(--sodium);
+      background: transparent;
+      color: var(--sodium);
+      font-family: var(--ui);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .play-again:hover { background: rgba(255, 177, 92, 0.12); }
+
+    @media (max-width: 820px) {
+      .start-card { grid-template-columns: 1fr; gap: 24px; }
+      .start-title { font-size: 74px; }
+      .start-side { align-self: start; }
+      .buy-grid { grid-template-columns: 1fr; }
+      #topbar { padding: 12px 16px; }
+      #topbar::after { left: 16px; }
+      .hud-panel { bottom: 14px; min-width: 196px; }
+      #player-panel { left: 14px; }
+      #weapon-panel { right: 14px; }
+      #killfeed { right: 14px; }
+      .scoreline { font-size: 11px; }
+      .scoreline b { font-size: 19px; }
+    }
+  </style>
+  <script type="importmap">
+    {"imports":{"three":"./vendor/three/three.module.min.js"}}
+  </script>
 </head>
 <body>
-<div id="game"></div>
+  <div id="hud">
+    <header id="topbar">
+      <div class="brand">
+        <span class="brand-title">QUAY 9</span>
+        <span class="brand-sub">DRY DOCK 04</span>
+      </div>
+      <div class="round-centre">
+        <span id="round-timer">1:45</span>
+        <span id="bomb-state">CHARGE CARRIED</span>
+      </div>
+      <div class="scoreline">
+        <span class="you">YOU <b id="score-you">0</b></span>
+        <span class="dot">:</span>
+        <span class="rust"><b id="score-rust">0</b> RUST</span>
+      </div>
+    </header>
 
-<div id="hud" aria-hidden="true">
-  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
-  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
-  <div id="ammo"><span id="ammo-mag">30</span><span id="ammo-reserve">/ 90</span></div>
-  <div id="score">Score <b id="score-value">0</b></div>
-</div>
+    <section class="hud-panel" id="player-panel">
+      <div class="stat-row"><span class="stat-label">HEALTH</span><span class="stat-value" id="health-value">100</span></div>
+      <div class="meter"><i id="health-fill"></i></div>
+      <div class="stat-row"><span class="stat-label">ARMOR</span><span class="stat-value" id="armor-value">0</span></div>
+      <div class="meter"><i id="armor-fill" style="width:0%"></i></div>
+      <div id="money">$ 800</div>
+    </section>
 
-<div id="overlay" class="overlay">
-  <section class="panel" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
-    <h1 id="overlay-title">Greybox Range</h1>
-    <p id="overlay-copy">A plain room, one rifle and four targets. Click to play.</p>
-    <button id="play" type="button">Click to play</button>
-    <ul class="keys">
-      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
-      <li><kbd>Mouse</kbd> Look</li>
-      <li><kbd>Click</kbd> Fire</li>
-      <li><kbd>R</kbd> Reload</li>
-      <li><kbd>Ctrl</kbd> Crouch</li>
-      <li><kbd>Space</kbd> Jump</li>
-    </ul>
-  </section>
-</div>
+    <section class="hud-panel" id="weapon-panel">
+      <div id="weapon-name">LONGSHORE AR</div>
+      <div class="ammo-line">
+        <span id="ammo-mag">30</span>
+        <span class="ammo-slash">/</span>
+        <span id="ammo-reserve">90</span>
+      </div>
+      <div id="fire-mode">AUTO</div>
+    </section>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "./vendor/three/three.module.min.js"
-  }
-}
-</script>
-<script type="module" src="./src/main.js"></script>
+    <div id="prompt"></div>
+    <div id="killfeed"></div>
+
+    <div id="crosshair">
+      <i class="ch-top"></i>
+      <i class="ch-bottom"></i>
+      <i class="ch-left"></i>
+      <i class="ch-right"></i>
+      <i id="crosshair-dot"></i>
+    </div>
+    <div id="hitmarker">✕</div>
+    <div id="damage-vignette"></div>
+    <div id="damage-tick"></div>
+  </div>
+
+  <div id="buy-menu" class="screen">
+    <div class="buy-frame">
+      <div class="buy-head">
+        <div class="buy-title">BUY <em>PHASE</em> <span id="buy-timer">00:12</span></div>
+        <div class="buy-meta"><span id="buy-money">$ 800</span><span>QUAY 9 / ATTACK</span></div>
+      </div>
+      <div class="buy-grid" id="buy-cards"></div>
+      <div class="buy-foot">B TO CLOSE · BUYING RESOLVES AT DEPLOY</div>
+    </div>
+  </div>
+
+  <div id="start-overlay" class="screen is-open">
+    <div class="start-card">
+      <div>
+        <div class="start-kicker">TACTICAL FPS · NIGHT HARBOUR · ATTACK</div>
+        <h1 class="start-title">QUAY <span>9</span></h1>
+        <p class="start-tagline">HOLD THE TIDE. PLANT THE CHARGE.</p>
+        <div class="start-rule"></div>
+        <p class="start-note">
+          A decommissioned tidal drydock. One attacker, callsign TIDE. Three RUST security
+          operators hold A and B. Take the rifle, clear the lanes, and put the charge on the
+          hazard square before the tide turns.
+        </p>
+      </div>
+      <div class="start-side">
+        <div class="controls-grid">
+          <div class="control"><kbd>WASD</kbd> Move</div>
+          <div class="control"><kbd>MOUSE</kbd> Aim</div>
+          <div class="control"><kbd>LMB</kbd> Fire</div>
+          <div class="control"><kbd>R</kbd> Reload</div>
+          <div class="control"><kbd>SHIFT</kbd> Walk</div>
+          <div class="control"><kbd>C / CTRL</kbd> Crouch</div>
+          <div class="control"><kbd>SPACE</kbd> Jump</div>
+          <div class="control"><kbd>1 / 2</kbd> Weapons</div>
+          <div class="control"><kbd>E</kbd> Plant</div>
+          <div class="control"><kbd>G</kbd> Grenade</div>
+        </div>
+        <button class="deploy" id="deploy-button" type="button">DEPLOY</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pause-overlay" class="screen">
+    <div class="pause-card">
+      <div class="pause-title">PAUSED</div>
+      <div class="pause-sub">POINTER LOCK LOST</div>
+      <div class="pause-hint">CLICK TO RESUME</div>
+    </div>
+  </div>
+
+  <div id="round-overlay" class="screen">
+    <div class="result-card">
+      <div class="result-word" id="round-result">ROUND WON</div>
+      <div class="result-reason" id="round-reason">CHARGE DETONATED</div>
+      <div class="result-money" id="round-money">+ $3,000</div>
+      <div class="result-countdown" id="round-countdown">NEXT ROUND IN 4</div>
+    </div>
+  </div>
+
+  <div id="match-overlay" class="screen">
+    <div class="result-card">
+      <div class="result-word" id="match-result">MATCH WON</div>
+      <div class="result-reason">QUAY 9 SECURED</div>
+      <div class="match-stats" id="match-stats">ROUNDS 5 · KILLS 0 · PLANTS 0 · ACCURACY 0%</div>
+      <button class="play-again" id="play-again" type="button">PLAY AGAIN</button>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>
