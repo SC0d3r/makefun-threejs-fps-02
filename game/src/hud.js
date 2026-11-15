@@ -147,9 +147,14 @@ export function createHud(state) {
     let bombText = 'CHARGE CARRIED';
     if (!state.alive) bombText = 'TIDE DOWN';
     else if (state.bomb.planted) bombText = state.bomb.defusing ? 'CHARGE DEFUSING' : 'CHARGE PLANTED';
-    else if (state.plant.active && state.plant.time > 0) bombText = `CHARGE PLANTING ${Math.min(100, Math.floor((state.plant.time / ROUND.plantTime) * 100))}%`;
+    let plantPct = 0;
+    if (state.plant.active && state.plant.time > 0) {
+      plantPct = Math.min(100, Math.floor((state.plant.time / ROUND.plantTime) * 100));
+      bombText = `SITE ${state.plant.site} PLANTING ${plantPct}%`;
+    }
     else if (state.mode === 'buy') bombText = '';
     setText(el.bomb, bombText);
+    el.bomb.style.backgroundSize = `${plantPct}% 6px,100% 6px`;
     el.bomb.classList.toggle('armed', state.bomb.planted);
 
     setText(el.you, String(state.scoreYou));

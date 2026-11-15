@@ -168,6 +168,10 @@ export function createMap(scene, anisotropy = 8) {
     floor.receiveShadow = true;
     group.add(floor);
 
+    // A roof closes the hall: without it every lamp fixture hangs against black
+    // sky and the top of each frame reads as a hole in the level.
+    box(0, 6, 0, 64, 0.2, 48, mats.dark, false, false);
+
     // Perimeter and lane walls. The two 4 m lane gaps at z=0 and the two north
     // doors are the only ways between the spawn, the cross and the sites.
     box(0, 0, -24, 64, 6, 0.6, mats.wall);
@@ -183,13 +187,11 @@ export function createMap(scene, anisotropy = 8) {
     box(20.5, 0, -18, 23, 6, 0.5, mats.wall);
     box(9, 0, -13, 0.4, 4.2, 6, mats.dark);
     box(-9, 0, -13, 0.4, 4.2, 6, mats.dark);
-    // B tunnel dogleg: the east half is sealed at z=8 and the west half at
-    // z=11, so entering B requires a right-left turn through a 3.5 m doorway.
+    // B tunnel dogleg: sealed at z=8 east and z=11 west, a right-left turn.
     box(28.25, 0, 8, 7.5, 3, 0.5, mats.dark);
     box(24.5, 0, 11, 0.5, 3, 6, mats.dark);
 
-    // Catwalk over mid with stairs at both ends, so the sightline is a real
-    // risk and the player can take height without a lift.
+    // Catwalk over mid with stairs at both ends, so height comes at a risk.
     box(0, 2.5, -3.5, 3, 0.12, 15, mats.steel);
     for (let i = 0; i < 10; i++) {
       const rise = 0.25 * (i + 1);
@@ -203,7 +205,7 @@ export function createMap(scene, anisotropy = 8) {
     }
     for (const p of [[0, 8], [-2, 0], [2, -6], [0, -12]]) box(p[0], 0, p[1], 0.8, 3, 0.8, mats.concrete);
 
-    // A long and B tunnel chokepoints: containers force a slalom but leave a
+    // Lane chokepoints: containers force a slalom but leave a
     // readable lane on both sides of each block.
     const containers = [
       [-27, 6, 2.4, 6, mats.rust], [-27, 0, 6, 2.4, mats.steel], [-20, -16, 6, 2.4, mats.rust],
@@ -252,9 +254,9 @@ export function createMap(scene, anisotropy = 8) {
     for (let x = -28; x <= 28; x += 8) box(x, 2.5, -22.9, 0.12, 0.8, 0.12, mats.dark, false, false);
 
     // Site floor marks stay dim and small: geometry and enemies must win.
-    const siteA = decal(-16, 0.028, -10, 2.0, 2.0, textures.stencilA, 0, 0.55);
+    const siteA = decal(-16, 0.028, -10, 2.2, 2.2, textures.stencilA, 0, 1);
     siteA.rotation.x = -Math.PI / 2;
-    const siteB = decal(16, 0.028, -10, 2.0, 2.0, textures.stencilB, 0, 0.55);
+    const siteB = decal(16, 0.028, -10, 2.2, 2.2, textures.stencilB, 0, 1);
     siteB.rotation.x = -Math.PI / 2;
     decal(0, 0.03, 10, 3.2, 0.5, textures.arrow, 0, 0.5).rotation.x = -Math.PI / 2;
 
@@ -307,9 +309,10 @@ export function createMap(scene, anisotropy = 8) {
       group.add(bulb);
       if (y > 3) {
         box(x, y + 0.34, z, 0.1, 0.56, 0.1, mats.steel, false, false);
-        box(x, y + 0.64, z, 0.4, 0.05, 0.4, mats.lamp, false, false);
       }
     }
+    // Trusses mount the lamp caps, which otherwise float in the open sky.
+    for (const tz of [-8, -13.5, 0]) box(0, 4.24, tz, 64, 0.18, 0.18, mats.lamp, false, false);
     lamp(-22, 4.2, -8, 0xff9a4a, 58, 24, true);
     lamp(-12, 4.2, -14, 0xff9a4a, 48, 22, true);
     lamp(13, 3.6, -8, 0x57e0d6, 48, 22, false);

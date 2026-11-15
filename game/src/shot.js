@@ -103,8 +103,9 @@ export function createShot(state, deps) {
     target.group.visible = true;
     // The still is taken a beat after the hit, so the target leans off the
     // round instead of standing at attention through it.
-    target.group.rotation.x = -0.07;
-    target.group.rotation.z = 0.05;
+    target.group.rotation.x = -0.17;
+    target.group.rotation.z = 0.13;
+    state.hitmarker = 0.22;
     bots.stage(mate, 18.6, -10.9, facePlayer(mate), -0.14);
     mate.alive = true;
     mate.health = 100;
@@ -139,7 +140,7 @@ export function createShot(state, deps) {
     liveBase(2, 1, 4, 2900);
     state.player.crouch = true;
     place(-17.05, 0, -9.15);
-    lookAt(-16, 0.48, -10);
+    lookAt(-15.7, 0.6, -10.2);
     state.health = 92;
     state.armor = 0;
     state.ammo.rifle.mag = 30;
@@ -165,7 +166,7 @@ export function createShot(state, deps) {
     state.round = 4;
     state.scoreYou = 2;
     state.scoreRust = 1;
-    state.primary = null;
+    state.primary = 'rifle';
     place(17.8, 0, -4.8);
     lookAt(15.6, 1.2, -9.8);
     hud.setOverlay('buy');

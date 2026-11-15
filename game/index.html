@@ -32,7 +32,7 @@ button:hover,button:focus-visible{border-color:var(--sodium);color:var(--sodium)
 #brand small{display:block;margin-top:2px;color:var(--cyan);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:clamp(8px,.85vw,11px)}
 #clock{text-align:center;min-width:150px}
 #timer{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:clamp(24px,3.4vw,44px);line-height:1;font-weight:700}
-#bombState{margin-top:4px;font-size:clamp(9px,1vw,13px);color:var(--sodium);letter-spacing:.14em}
+#bombState{margin-top:4px;font-size:clamp(9px,1vw,13px);color:var(--sodium);letter-spacing:.14em;padding-bottom:6px;background-image:linear-gradient(90deg,var(--sodium),var(--sodium)),linear-gradient(#1b242d,#1b242d);background-repeat:no-repeat;background-position:left bottom,left bottom;background-size:0% 6px,100% 6px}
 #bombState.armed{color:var(--danger)}
 #score{display:flex;align-items:baseline;gap:6px;font-size:clamp(10px,1.1vw,14px)}
 #score span{color:#9aacb8}
@@ -62,7 +62,7 @@ button:hover,button:focus-visible{border-color:var(--sodium);color:var(--sodium)
 #crosshair i:nth-child(5){width:5px;height:5px;left:-2.5px;top:-2.5px;background:#000;box-shadow:0 0 0 1px #fff, 0 0 3px #000}
 #crosshair.hide{display:none}
 #crosshair.planting{display:none}
-#hitmarker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(45deg);color:var(--paper);font-size:22px;opacity:0;transition:opacity .05s}
+#hitmarker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(45deg);color:var(--paper);font-size:26px;opacity:0}
 #hitmarker.on{opacity:1;color:var(--sodium)}
 #feed{position:absolute;right:22px;top:78px;width:min(310px,42vw);display:grid;gap:4px;justify-items:end;text-align:right;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px}
 #feed div{background:#070d16b8;border-left:2px solid var(--rust);padding:3px 6px;color:var(--paper);animation:feedin .18s ease-out}
@@ -101,8 +101,8 @@ h1 em{font-style:normal;color:var(--sodium)}
 .card:hover,.card.hover{border-color:var(--sodium);background:#1a2835;transform:translateY(-2px)}
 .card.hover{box-shadow:inset 3px 0 0 var(--sodium)}
 .card.disabled{opacity:.4;filter:saturate(.3);pointer-events:none}
-.card.owned{border-color:var(--cyan)}
-.card.owned:after{content:"OWNED";position:absolute;right:8px;bottom:6px;font-size:8px;color:var(--cyan)}
+.card.owned{opacity:1;filter:none;border-color:#2f6f6a}
+.card.owned:after{content:"OWNED";position:absolute;right:10px;top:32px;font-size:9px;letter-spacing:.16em;color:var(--cyan)}
 #buyFoot{display:flex;justify-content:space-between;margin-top:14px;font-size:10px;color:#aeb8c1}
 #buyFoot b{color:var(--paper)}
 #round .panel,#match .panel{text-align:center}

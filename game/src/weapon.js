@@ -15,9 +15,15 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   // a black disc in the middle of the flash.
   const flashMaterial = new THREE.SpriteMaterial({ map: makeFlashTexture(), transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
   const flash = new THREE.Sprite(flashMaterial);
-  flash.scale.setScalar(0.11);
+  flash.scale.set(0.15, 0.15, 1);
   flash.renderOrder = 4;
   flash.visible = false;
+  // Turned across the first, this reads as an eight-point star at 1:1.
+  const flashCross = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashMaterial.map, transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
+  flashCross.scale.set(0.085, 0.085, 1);
+  flashCross.material.rotation = 0.62;
+  flashCross.renderOrder = 4;
+  flashCross.visible = false;
   const flashLight = new THREE.PointLight(PALETTE.sodium, 0, 3, 2);
   const rim = new THREE.DirectionalLight(PALETTE.cyan, 0.9);
   rim.position.set(-1.6, 0.9, -1.2);
@@ -109,9 +115,7 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   part(0.022, 0.02, 0.035, 0, -0.079, 0.075, steelMat);
   part(0.012, 0.05, 0.012, 0, -0.098, 0.027, darkMetal);
   part(0.05, 0.012, 0.06, 0, -0.121, 0.045, darkMetal);
-  // Solid skeleton stock: a deep polymer body with a comb and a thin rubber
-  // pad. The old stock was two rails and a full-size butt plate, which read on
-  // camera as a black card floating at the end of the receiver.
+  // Solid skeleton stock with a comb and a thin rubber pad.
   const stock = new THREE.Group();
   group.add(stock);
   tube(0.022, 0.12, 0, 0.005, 0.17, darkMetal, stock);
@@ -123,17 +127,14 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   part(0.008, 0.014, 0.05, 0, -0.028, 0.305, rubberMat, 0, stock);
   part(0.036, 0.006, 0.17, 0, 0.041, 0.26, railMat, 0, stock);
 
-  // Support hand wrapped under the handguard: the palm sits on the near side,
-  // the fingers climb the visible flank and the thumb comes over the top, so
-  // the grip reads from the shooter's viewpoint.
+  // Support hand wrapped under the handguard, palm on the near side.
   const hands = new THREE.Group();
   group.add(hands);
   const supportHand = new THREE.Group();
   hands.add(supportHand);
   part(0.046, 0.086, 0.07, -0.044, -0.055, -0.29, glove, 0, supportHand);
   part(0.02, 0.072, 0.066, -0.066, -0.05, -0.29, gloveEdge, 0, supportHand);
-  // Wide spacing and alternating shades: at 720p the old 3 mm gaps closed up
-  // and the four fingers read as one smooth wedge.
+  // Wide spacing and alternating shades keep the fingers apart at 720p.
   for (let i = 0; i < 4; i++) {
     const z = -0.228 - i * 0.042;
     const finger = part(0.019, 0.06, 0.026, -0.078, -0.004, z, i % 2 ? gloveEdge : glove, 0, supportHand);
@@ -171,15 +172,15 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   const bolt = part(0.022, 0.024, 0.06, 0.06, 0.04, 0.02, steelMat);
 
   front.add(flash);
+  front.add(flashCross);
   front.add(flashLight);
   // Sit on the bore, the same point the tracer is built from, so the streak
   // and the flash meet in the still and in play.
   flash.position.set(0, 0.012, -0.612);
+  flashCross.position.set(0, 0.012, -0.612);
   flashLight.position.set(0, 0.018, -0.58);
 
-  // Two gloved hands that grip the charge while the plant is running. The
-  // palms are deliberately narrow and sit outside the screen bezel so the
-  // countdown stays readable.
+  // Two gloved hands on the charge while the plant runs.
   const plantHands = new THREE.Group();
   for (const side of [-1, 1]) {
     const hand = new THREE.Group();
@@ -556,7 +557,9 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
       group.rotation.y = 0.045 + sway * 0.6;
     }
     flash.visible = state.muzzle > 0;
+    flashCross.visible = state.muzzle > 0;
     flashMaterial.opacity = state.muzzle > 0 ? 0.95 : 0;
+    flashCross.material.opacity = state.muzzle > 0 ? 0.7 : 0;
     flashLight.intensity = state.muzzle > 0 ? 14 : 0;
     plantHands.visible = group.visible && state.plant.active;
   }
