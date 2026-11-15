@@ -28,12 +28,12 @@ export const WEAPONS = {
 };
 
 export const BUY = [
-  { id: 'rifle', name: 'LONGSHORE AR', price: 2700, role: '30 ROUNDS — HOLD LONG ANGLES', stats: [0.78, 0.62, 0.82] },
-  { id: 'smg', name: 'KESTREL SMG', price: 1250, role: 'FAST — CLEAR THE TUNNEL', stats: [0.48, 0.92, 0.58] },
-  { id: 'shotgun', name: 'BREAKWATER 12g', price: 1800, role: '9 PELLETS — SITE A CLOSE', stats: [0.95, 0.22, 0.4] },
+  { id: 'rifle', name: 'LONGSHORE AR', price: 2700, role: '30 ROUNDS · HOLD LONG ANGLES', stats: [0.78, 0.62, 0.82] },
+  { id: 'smg', name: 'KESTREL SMG', price: 1250, role: 'FAST · CLEAR THE TUNNEL', stats: [0.48, 0.92, 0.58] },
+  { id: 'shotgun', name: 'BREAKWATER 12g', price: 1800, role: '9 PELLETS · ROOM CLEAR', stats: [0.95, 0.22, 0.4] },
   { id: 'armor', name: 'PLATE ARMOR', price: 650, role: 'SOAKS HALF OF EVERY HIT', stats: [0.7, 0.5, 0.6] },
-  { id: 'frag', name: 'FRAG CHARGE', price: 300, role: '0.9 s FUSE — CLEARS COVER', stats: [0.9, 0.35, 0.3] },
-  { id: 'flash', name: 'FLASH CHARGE', price: 200, role: 'BLINDS 2.5 s — PUSH IN', stats: [0.3, 0.55, 0.45] },
+  { id: 'frag', name: 'FRAG CHARGE', price: 300, role: '0.9S FUSE · CLEARS COVER', stats: [0.9, 0.35, 0.3] },
+  { id: 'flash', name: 'FLASH CHARGE', price: 200, role: 'BLINDS 2.5S · PUSH IN', stats: [0.3, 0.55, 0.45] },
 ];
 
 export const MAP = {

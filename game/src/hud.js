@@ -4,18 +4,18 @@ import { BUY, MAP, ROUND, WEAPONS } from './config.js';
 import { clamp, fmtClock, fmtMoney, fmtTime } from './util.js';
 
 export function createHud(state) {
-  const $ = (id) => document.getElementById(id);
+  const byId = (id) => document.getElementById(id);
   const el = {
-    timer: $('timer'), bomb: $('bombState'), you: $('scoreYou'), rust: $('scoreRust'),
-    health: $('health'), healthBar: $('healthBar'), armor: $('armor'), armorBar: $('armorBar'),
-    money: $('money'), weaponName: $('weaponName'), ammo: $('ammo'), fireMode: $('fireMode'),
-    prompt: $('prompt'), crosshair: $('crosshair'), hitmarker: $('hitmarker'),
-    feed: $('feed'), vignette: $('vignette'), flash: $('flash'), callout: $('callout'),
-    start: $('start'), buy: $('buy'), round: $('round'), match: $('match'), pause: $('pause'),
-    buyTimer: $('buyTimer'), buyMoney: $('buyMoney'), cards: $('cards'),
-    roundResult: $('roundResult'), roundReason: $('roundReason'), roundMoney: $('roundMoney'), roundCountdown: $('roundCountdown'),
-    matchResult: $('matchResult'), matchStats: $('matchStats'),
-    deploy: $('deploy'), playAgain: $('playAgain'),
+    timer: byId('timer'), bomb: byId('bombState'), you: byId('scoreYou'), rust: byId('scoreRust'),
+    health: byId('health'), healthBar: byId('healthBar'), armor: byId('armor'), armorBar: byId('armorBar'),
+    money: byId('money'), weaponName: byId('weaponName'), ammo: byId('ammo'), fireMode: byId('fireMode'),
+    prompt: byId('prompt'), crosshair: byId('crosshair'), hitmarker: byId('hitmarker'),
+    feed: byId('feed'), vignette: byId('vignette'), flash: byId('flash'), callout: byId('callout'),
+    start: byId('start'), buy: byId('buy'), round: byId('round'), match: byId('match'), pause: byId('pause'),
+    buyTimer: byId('buyTimer'), buyMoney: byId('buyMoney'), cards: byId('cards'),
+    roundResult: byId('roundResult'), roundReason: byId('roundReason'), roundMoney: byId('roundMoney'), roundCountdown: byId('roundCountdown'),
+    matchResult: byId('matchResult'), matchStats: byId('matchStats'),
+    deploy: byId('deploy'), playAgain: byId('playAgain'),
   };
   let actions = {};
   let feedSig = '';
@@ -27,8 +27,8 @@ export function createHud(state) {
     const card = document.createElement('button');
     card.className = 'card';
     card.type = 'button';
-    const bars = item.stats.map((value, index) => `<i class="${index < Math.round(value * 3) ? 'on' : ''}"></i>`).join('');
-    card.innerHTML = `<div class="name"><span>${item.name}</span><span class="price">$${item.price}</span></div>
+    const bars = item.stats.map((value) => `<i><span style="width:${Math.round(value * 100)}%"></span></i>`).join('');
+    card.innerHTML = `<div class="name"><span>${item.name}</span><span class="price">${fmtMoney(item.price)}</span></div>
       <div class="role">${item.role}</div><div class="stats">${bars}</div>`;
     card.addEventListener('click', () => { if (actions.onBuy) actions.onBuy(item.id); });
     el.cards.appendChild(card);
@@ -61,6 +61,7 @@ export function createHud(state) {
       el[key].classList.toggle('on', key === name);
     }
     el.crosshair.classList.toggle('hide', name === 'start' || name === 'buy' || name === 'match' || name === 'pause');
+    document.body.classList.toggle('buying', name === 'buy');
   }
 
   function setPrompt(text, seconds = 0) {
@@ -124,8 +125,8 @@ export function createHud(state) {
     if (state.mode === 'buy') return state.buyOpen ? 'CLICK A CARD' : 'PRESS B TO BUY';
     if (state.mode === 'ended') return 'ROUND OVER';
     if (state.mode === 'matchEnd') return 'MATCH OVER';
-    if (state.plant.active) return `PLANTING ${Math.min(100, Math.floor((state.plant.time / ROUND.plantTime) * 100))}%`;
-    if (state.bomb.planted) return state.bomb.defusing ? 'DEFUSE IN PROGRESS' : 'CHARGE PLANTED — DEFEND';
+    if (state.plant.active) return '';
+    if (state.bomb.planted) return state.bomb.defusing ? 'DEFUSE IN PROGRESS' : 'DEFEND THE CHARGE';
     if (state.reload > 0) return 'RELOADING';
     const ammo = state.ammo[state.weapon];
     if (state.alive && ammo.mag <= 0) return 'PRESS R TO RELOAD';
@@ -145,8 +146,8 @@ export function createHud(state) {
 
     let bombText = 'CHARGE CARRIED';
     if (!state.alive) bombText = 'TIDE DOWN';
-    else if (state.bomb.planted) bombText = state.bomb.defusing ? 'CHARGE DEFUSING' : `CHARGE PLANTED ${fmtTime(state.bomb.fuse)}`;
-    else if (state.plant.active && state.plant.time > 0) bombText = 'CHARGE PLANTING';
+    else if (state.bomb.planted) bombText = state.bomb.defusing ? 'CHARGE DEFUSING' : 'CHARGE PLANTED';
+    else if (state.plant.active && state.plant.time > 0) bombText = `CHARGE PLANTING ${Math.min(100, Math.floor((state.plant.time / ROUND.plantTime) * 100))}%`;
     else if (state.mode === 'buy') bombText = '';
     setText(el.bomb, bombText);
     el.bomb.classList.toggle('armed', state.bomb.planted);
@@ -180,6 +181,9 @@ export function createHud(state) {
       cachedGap = gap;
       el.crosshair.style.setProperty('--gap', `${gap.toFixed(1)}px`);
     }
+    // While the charge is being planted the player cannot fire, so the reticle
+    // goes away instead of hovering over a wall next to the device.
+    el.crosshair.classList.toggle('planting', state.plant.active);
     el.hitmarker.classList.toggle('on', state.hitmarker > 0);
     el.vignette.style.opacity = String(clamp(state.damageFlash, 0, 0.9));
     el.flash.style.opacity = String(clamp(state.flash, 0, 1));

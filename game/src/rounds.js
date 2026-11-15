@@ -7,20 +7,91 @@ import { clamp, lerp } from './util.js';
 
 export function createRounds(state, scene, map, player, bots, weapon, hud, audio, effects, input) {
   const bomb = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.22), new THREE.MeshStandardMaterial({ color: 0x1b232b, roughness: 0.5, metalness: 0.5 }));
-  body.position.y = 0.08;
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x232d36, roughness: 0.62, metalness: 0.35 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.2, 0.28), bodyMat);
+  body.position.y = 0.1;
+  body.castShadow = true;
   bomb.add(body);
-  const ledMaterial = new THREE.MeshStandardMaterial({ color: PALETTE.danger, emissive: PALETTE.danger, emissiveIntensity: 3 });
-  const led = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 0.05), ledMaterial);
-  led.position.set(0.07, 0.18, 0.09);
-  bomb.add(led);
-  const cableMaterial = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, roughness: 0.6 });
-  for (let i = 0; i < 3; i++) {
-    const cable = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.18 + i * 0.05), cableMaterial);
-    cable.position.set(-0.12 + i * 0.04, 0.17, -0.03);
-    cable.rotation.y = 0.2 - i * 0.2;
+  const bezelMat = new THREE.MeshStandardMaterial({ color: 0x0a0f14, roughness: 0.45, metalness: 0.7 });
+  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.32), bezelMat);
+  bezel.position.y = 0.205;
+  bomb.add(bezel);
+  // Countdown display on the front face. The old screen sat on the top face
+  // and read as a pink bar from the plant camera; a canvas gives real digits.
+  const displayCanvas = document.createElement('canvas');
+  displayCanvas.width = 256;
+  displayCanvas.height = 128;
+  const displayCtx = displayCanvas.getContext('2d');
+  const displayTexture = new THREE.CanvasTexture(displayCanvas);
+  displayTexture.colorSpace = THREE.SRGBColorSpace;
+  let displayFuse = -1;
+  function paintDisplay(seconds) {
+    const whole = Math.max(0, Math.ceil(seconds));
+    if (whole === displayFuse) return;
+    displayFuse = whole;
+    displayCtx.fillStyle = '#170303';
+    displayCtx.fillRect(0, 0, 256, 128);
+    displayCtx.fillStyle = '#ff3a2c';
+    displayCtx.font = 'bold 88px ui-monospace, Menlo, Consolas, monospace';
+    displayCtx.textAlign = 'center';
+    displayCtx.textBaseline = 'middle';
+    displayCtx.fillText(`0:${String(whole).padStart(2, '0')}`, 128, 66);
+    displayCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    for (let y = 0; y < 128; y += 6) displayCtx.fillRect(0, y, 256, 2);
+    displayTexture.needsUpdate = true;
+  }
+  paintDisplay(40);
+  const screenBezel = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.14, 0.016), bezelMat);
+  screenBezel.position.set(0, 0.11, 0.141);
+  bomb.add(screenBezel);
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.21, 0.11), new THREE.MeshBasicMaterial({ map: displayTexture }));
+  screen.position.set(0, 0.11, 0.1505);
+  bomb.add(screen);
+  const screenLight = new THREE.PointLight(0xff2a18, 1.15, 2.4, 2);
+  screenLight.position.set(0, 0.2, 0.34);
+  bomb.add(screenLight);
+  const keyMat = new THREE.MeshStandardMaterial({ color: 0x8a97a3, roughness: 0.5, metalness: 0.4 });
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 3; c++) {
+      const key = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.008, 0.02), keyMat);
+      key.position.set(-0.03 + c * 0.035, 0.225, -0.04 - r * 0.028);
+      bomb.add(key);
+    }
+  }
+  const strapMat = new THREE.MeshStandardMaterial({ color: 0x3a2c22, roughness: 0.92 });
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.07, 0.3), strapMat);
+  strap.position.y = 0.1;
+  bomb.add(strap);
+  const cableMat = new THREE.MeshStandardMaterial({ color: 0x6a4a22, roughness: 0.8 });
+  for (let i = 0; i < 2; i++) {
+    const cable = new THREE.Mesh(new THREE.TorusGeometry(0.07 + i * 0.03, 0.009, 6, 14, Math.PI), cableMat);
+    cable.position.set(-0.04 + i * 0.07, 0.19, -0.13);
+    cable.rotation.x = 1.15;
+    cable.rotation.y = 0.4 - i * 0.7;
     bomb.add(cable);
   }
+  // Demolition charge padding on the lid. Without it the flat lid plus the old
+  // arch of cable read as a lunchbox handle from the plant camera.
+  // Contact shadow so the charge sits on the deck instead of hovering in its
+  // own red glow.
+  const contact = new THREE.Mesh(new THREE.CircleGeometry(0.3, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false }));
+  contact.rotation.x = -Math.PI / 2;
+  contact.position.y = 0.012;
+  bomb.add(contact);
+  const puttyMat = new THREE.MeshStandardMaterial({ color: 0x9c8a63, roughness: 0.94 });
+  const tapeMat = new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.95 });
+  for (const side of [-1, 1]) {
+    const block = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.07, 0.15), puttyMat);
+    block.position.set(side * 0.105, 0.245, -0.04 + side * 0.012);
+    bomb.add(block);
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.148, 0.016, 0.032), tapeMat);
+    strap.position.set(side * 0.105, 0.283, -0.04 + side * 0.012);
+    bomb.add(strap);
+  }
+  const ledMaterial = new THREE.MeshStandardMaterial({ color: PALETTE.danger, emissive: PALETTE.danger, emissiveIntensity: 3 });
+  const led = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.03, 0.02), ledMaterial);
+  led.position.set(-0.16, 0.19, 0.145);
+  bomb.add(led);
   const ringMaterial = new THREE.MeshBasicMaterial({ color: PALETTE.cyan, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false });
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.44, 28), ringMaterial);
   ring.rotation.x = -Math.PI / 2;
@@ -51,11 +122,16 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
     ring.scale.setScalar(0.1);
   }
 
+  function setBombYaw(yaw) {
+    bomb.rotation.y = yaw;
+  }
+
   function showBomb(x, z) {
     bomb.position.set(x, 0, z);
     bomb.visible = true;
     state.bomb.x = x;
     state.bomb.z = z;
+    paintDisplay(state.bomb.fuse || ROUND.fuse);
   }
 
   function startMatch() {
@@ -114,7 +190,7 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
     state.plant.site = null;
     bots.activate();
     hud.setOverlay(null);
-    hud.addFeed('TIDE DEPLOYED — PLANT AT A OR B', 'call');
+    hud.addFeed('TIDE DEPLOYED · PLANT AT A OR B', 'call');
     input.lock();
   }
 
@@ -183,7 +259,7 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
     bots.hear(site.x, site.z, 60);
     hud.addFeed(`YOU > CHARGE PLANTED AT ${siteKey}`, 'you');
     audio.plant();
-    hud.setPrompt('CHARGE PLANTED — DEFEND', 1.2);
+    hud.setPrompt('CHARGE PLANTED · DEFEND', 1.2);
     return true;
   }
 
@@ -324,6 +400,7 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
       if (state.clock <= 0) { endRound('rust', 'TIME EXPIRED'); return; }
     } else if (state.mode === 'planted') {
       state.bomb.fuse = Math.max(0, state.bomb.fuse - dt);
+      paintDisplay(state.bomb.fuse);
       if (state.health <= 0) { endRound('rust', 'TIDE DOWN'); return; }
       if (state.bomb.defuse >= ROUND.defuseTime) { endRound('rust', 'CHARGE DEFUSED'); return; }
       if (bots.allDead()) { endRound('you', 'DEFENDERS DOWN'); return; }
@@ -340,5 +417,7 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
   return {
     bomb, startMatch, startBuyPhase, startLive, closeBuy, toggleBuy, buy, update,
     completePlant, stageCharge, endRound, restartMatch, showMatch, resetBomb,
+    paintDisplay,
+    setBombYaw,
   };
 }

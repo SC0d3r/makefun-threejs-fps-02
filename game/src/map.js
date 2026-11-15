@@ -252,9 +252,9 @@ export function createMap(scene, anisotropy = 8) {
     for (let x = -28; x <= 28; x += 8) box(x, 2.5, -22.9, 0.12, 0.8, 0.12, mats.dark, false, false);
 
     // Site floor marks stay dim and small: geometry and enemies must win.
-    const siteA = decal(-16, 0.028, -10, 2.0, 2.0, textures.stencilA, 0, 0.36);
+    const siteA = decal(-16, 0.028, -10, 2.0, 2.0, textures.stencilA, 0, 0.55);
     siteA.rotation.x = -Math.PI / 2;
-    const siteB = decal(16, 0.028, -10, 2.0, 2.0, textures.stencilB, 0, 0.36);
+    const siteB = decal(16, 0.028, -10, 2.0, 2.0, textures.stencilB, 0, 0.55);
     siteB.rotation.x = -Math.PI / 2;
     decal(0, 0.03, 10, 3.2, 0.5, textures.arrow, 0, 0.5).rotation.x = -Math.PI / 2;
 
@@ -272,7 +272,10 @@ export function createMap(scene, anisotropy = 8) {
   }
 
   function addLights() {
-    scene.add(new THREE.HemisphereLight(0x26384a, 0x0a0d12, 1.15));
+    scene.add(new THREE.HemisphereLight(0x3a566f, 0x18202a, 2.7));
+    // A dim fill so walls that face away from the moon are not pure black in a
+    // still; the value stays below the fog line so the mood holds.
+    scene.add(new THREE.AmbientLight(0x2b3b49, 0.5));
     const moon = new THREE.DirectionalLight(0x9db7d8, 2.4);
     moon.position.set(-18, 28, 12);
     moon.castShadow = true;
@@ -286,6 +289,11 @@ export function createMap(scene, anisotropy = 8) {
     moon.shadow.bias = -0.0007;
     moon.shadow.normalBias = 0.025;
     scene.add(moon);
+    // Camera-side fill so the shadowed faces of the containers and pillars do
+    // not fall to pure black in the screenshots; no shadow, low intensity.
+    const fill = new THREE.DirectionalLight(0x8aa6c4, 1.25);
+    fill.position.set(16, 9, 26);
+    scene.add(fill);
 
     function lamp(x, y, z, color, intensity, distance, warm) {
       const light = new THREE.PointLight(color, intensity, distance, 2);
@@ -297,13 +305,16 @@ export function createMap(scene, anisotropy = 8) {
       const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.26), warm ? mats.sodium : mats.cyan);
       bulb.position.set(x, y + 0.04, z);
       group.add(bulb);
-      if (y > 3) box(x, y + 0.2, z, 0.06, 0.9, 0.06, mats.lamp, false, false);
+      if (y > 3) {
+        box(x, y + 0.34, z, 0.1, 0.56, 0.1, mats.steel, false, false);
+        box(x, y + 0.64, z, 0.4, 0.05, 0.4, mats.lamp, false, false);
+      }
     }
-    lamp(-22, 4.2, -8, 0xff9a4a, 42, 20, true);
-    lamp(-12, 4.2, -14, 0xff9a4a, 34, 18, true);
-    lamp(13, 3.6, -8, 0x57e0d6, 34, 18, false);
-    lamp(19, 3.6, -13, 0x57e0d6, 30, 16, false);
-    lamp(0, 3.1, 0, 0xffd9a8, 20, 14, true);
+    lamp(-22, 4.2, -8, 0xff9a4a, 58, 24, true);
+    lamp(-12, 4.2, -14, 0xff9a4a, 48, 22, true);
+    lamp(13, 3.6, -8, 0x57e0d6, 48, 22, false);
+    lamp(19, 3.6, -13, 0x57e0d6, 42, 20, false);
+    lamp(0, 3.1, 0, 0xffd9a8, 30, 18, true);
   }
 
   function stars() {

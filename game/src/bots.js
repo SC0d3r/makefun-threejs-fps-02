@@ -21,9 +21,12 @@ export function createBots(state, scene, map, nav, player, hud, audio, effects) 
   const plateMat = new THREE.MeshStandardMaterial({ color: 0x6e3620, roughness: 0.5, metalness: 0.3, emissive: PALETTE.rust, emissiveIntensity: 0.22 });
   const clothMat = new THREE.MeshStandardMaterial({ color: 0x131a22, roughness: 0.9, metalness: 0.05 });
   const helmetMat = new THREE.MeshStandardMaterial({ color: 0x222c36, roughness: 0.55, metalness: 0.35 });
-  const gunMat = new THREE.MeshStandardMaterial({ color: 0x2a333c, roughness: 0.42, metalness: 0.4 });
+  const gunMat = new THREE.MeshStandardMaterial({ color: 0x3a4752, roughness: 0.42, metalness: 0.4 });
+  const barrelMat = new THREE.MeshStandardMaterial({ color: 0x7d8a94, roughness: 0.36, metalness: 0.55 });
+  const gloveMat = new THREE.MeshStandardMaterial({ color: 0x4b5359, roughness: 0.85 });
+  const bootMat = new THREE.MeshStandardMaterial({ color: 0x10161d, roughness: 0.92 });
   const visorCyan = new THREE.MeshStandardMaterial({ color: PALETTE.cyan, emissive: PALETTE.cyan, emissiveIntensity: 1.6, roughness: 0.35 });
-  const visorWarm = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, emissive: PALETTE.sodium, emissiveIntensity: 1.5, roughness: 0.35 });
+  const visorWarm = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, emissive: PALETTE.sodium, emissiveIntensity: 1.45, roughness: 0.35 });
 
   const defs = [
     { name: 'WARDEN', role: 'anchorA', route: ROUTES.anchorA, weapon: 'smg', spawn: SPAWNS[0], visor: visorWarm },
@@ -40,17 +43,55 @@ export function createBots(state, scene, map, nav, player, hud, audio, effects) 
     const group = new THREE.Group();
     const legL = addBox(group, 0.17, 0.8, 0.2, -0.13, 0.42, 0, clothMat);
     const legR = addBox(group, 0.17, 0.8, 0.2, 0.13, 0.42, 0, clothMat);
+    addBox(legL, 0.19, 0.12, 0.27, 0, -0.36, 0.04, bootMat);
+    addBox(legR, 0.19, 0.12, 0.27, 0, -0.36, 0.04, bootMat);
+    addBox(legL, 0.16, 0.12, 0.05, 0, -0.08, 0.1, plateMat);
+    addBox(legR, 0.16, 0.12, 0.05, 0, -0.08, 0.1, plateMat);
     addBox(group, 0.5, 0.58, 0.3, 0, 1.18, 0, vestMat);
     addBox(group, 0.42, 0.34, 0.05, 0, 1.24, 0.17, plateMat);
+    addBox(group, 0.11, 0.1, 0.04, -0.13, 1.08, 0.2, clothMat);
+    addBox(group, 0.11, 0.1, 0.04, 0, 1.08, 0.2, clothMat);
+    addBox(group, 0.11, 0.1, 0.04, 0.13, 1.08, 0.2, clothMat);
     addBox(group, 0.44, 0.12, 0.32, 0, 0.93, 0, helmetMat);
+    addBox(group, 0.17, 0.11, 0.24, -0.33, 1.42, 0, plateMat);
+    addBox(group, 0.17, 0.11, 0.24, 0.33, 1.42, 0, plateMat);
     const head = addBox(group, 0.27, 0.28, 0.28, 0, 1.62, 0, helmetMat);
     addBox(group, 0.29, 0.09, 0.3, 0, 1.77, -0.01, helmetMat);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), helmetMat);
+    dome.position.set(0, 1.78, 0);
+    dome.scale.set(1, 0.75, 1);
+    group.add(dome);
     const visor = addBox(group, 0.2, 0.07, 0.035, 0, 1.64, 0.15, def.visor);
     const armL = addBox(group, 0.13, 0.5, 0.15, -0.3, 1.15, 0.02, clothMat);
     const armR = addBox(group, 0.13, 0.5, 0.15, 0.3, 1.15, 0.02, clothMat);
-    const gun = addBox(group, 0.06, 0.1, 0.42, 0.18, 1.2, 0.3, gunMat);
-    addBox(group, 0.09, 0.05, 0.12, 0.18, 1.2, -0.02, gunMat);
+    addBox(armL, 0.11, 0.1, 0.12, 0, -0.27, 0.02, gloveMat);
+    addBox(armR, 0.11, 0.1, 0.12, 0, -0.27, 0.02, gloveMat);
+    const gun = new THREE.Group();
+    gun.position.set(-0.04, 1.18, 0.2);
+    gun.rotation.set(0.1, 1.32, 0.14);
+    group.add(gun);
+    const addGun = (w, h, d, x, y, z, mat = gunMat) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      mesh.position.set(x, y, z);
+      gun.add(mesh);
+      return mesh;
+    };
+    addGun(0.05, 0.07, 0.34, 0, 0, 0);
+    addGun(0.026, 0.026, 0.2, 0, 0.012, 0.26, barrelMat);
+    addGun(0.036, 0.036, 0.05, 0, 0.012, 0.37, barrelMat);
+    addGun(0.034, 0.09, 0.05, 0, -0.062, -0.04, barrelMat);
+    addGun(0.042, 0.06, 0.13, 0, -0.004, -0.23);
+    addGun(0.03, 0.03, 0.05, 0, 0.055, -0.02, barrelMat);
+    addGun(0.016, 0.05, 0.016, 0, 0.05, 0.17, barrelMat);
+    addGun(0.05, 0.07, 0.05, 0, -0.008, -0.19, gloveMat);
+    addGun(0.05, 0.065, 0.05, 0, -0.032, 0.04, gloveMat);
+    addGun(0.06, 0.065, 0.24, 0.02, -0.075, 0.03, gunMat);
+    addGun(0.06, 0.065, 0.2, -0.03, -0.06, -0.12, gunMat);
     addBox(group, 0.18, 0.2, 0.12, 0, 1.25, -0.2, clothMat);
+    const contact = new THREE.Mesh(new THREE.CircleGeometry(0.5, 18), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }));
+    contact.rotation.x = -Math.PI / 2;
+    contact.position.y = 0.015;
+    group.add(contact);
     group.visible = false;
     scene.add(group);
     const drop = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.5), gunMat);
@@ -231,7 +272,7 @@ export function createBots(state, scene, map, nav, player, hud, audio, effects) 
     bot.lastSeenAt = state.time;
     if (state.time - bot.lastCall > 5 && distance < 40) {
       bot.lastCall = state.time;
-      hud.callout(`${bot.name} — CONTACT`);
+      hud.callout(`${bot.name} · CONTACT`);
       audio.callout();
       for (const other of squad) {
         if (other !== bot && other.alive && Math.hypot(other.x - bot.x, other.z - bot.z) < 14 && other.lastSeenAt < state.time - 1) {
@@ -580,10 +621,17 @@ export function createBots(state, scene, map, nav, player, hud, audio, effects) 
     bot.group.position.set(x, 0, z);
     bot.group.rotation.set(0, yaw, 0);
     bot.group.scale.y = 1;
+    bot.gun.visible = bot.alive;
+    // Mirror the carry for SABLE and tie the tilt to the lean, so a staged pair
+    // never stands in two identical poses.
+    const mirror = bot.name === 'SABLE' ? -1 : 1;
+    bot.gun.rotation.set(0.1 + pose * 0.22, mirror * (1.32 + pose * 0.25), 0.14 + pose * 0.3);
     bot.legL.rotation.x = pose;
     bot.legR.rotation.x = -pose;
-    bot.armL.rotation.x = -pose * 0.5;
-    bot.armR.rotation.x = pose * 0.5;
+    bot.armL.rotation.x = -1.15;
+    bot.armR.rotation.x = -0.95;
+    bot.armL.rotation.z = 0.55;
+    bot.armR.rotation.z = -0.5;
     updateParts(bot);
   }
 

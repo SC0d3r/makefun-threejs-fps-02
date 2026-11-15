@@ -42,7 +42,7 @@ export function createEffects(scene) {
   sparkAttr.setUsage(THREE.DynamicDrawUsage);
   sparkGeometry.setAttribute('position', sparkAttr);
   const sparkMaterial = new THREE.PointsMaterial({
-    color: PALETTE.sodium, size: 0.09, transparent: true, opacity: 1,
+    color: 0xe8f2ff, size: 0.08, transparent: true, opacity: 1,
     depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
   });
   const sparks = new THREE.Points(sparkGeometry, sparkMaterial);
@@ -76,21 +76,37 @@ export function createEffects(scene) {
   const blastLight = new THREE.PointLight(PALETTE.sodium, 0, 14, 2);
   blastLight.position.set(0, 0, 0);
   scene.add(blastLight);
+
+  // Impact pops. A hit needs one bright frame at the exact point of contact,
+  // otherwise a still of a firefight shows no receiving end at all.
+  const hitPops = [];
+  for (let i = 0; i < 6; i++) {
+    const material = new THREE.SpriteMaterial({ map: flashTexture, color: 0xdff0ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+    const sprite = new THREE.Sprite(material);
+    sprite.visible = false;
+    scene.add(sprite);
+    hitPops.push({ sprite, life: 0, max: 0.09 });
+  }
+  let hitPopIndex = 0;
   let blastLightLife = 0;
 
-  function tracer(fromX, fromY, fromZ, dx, dy, dz, color = PALETTE.sodium) {
+  function tracerLine(fromX, fromY, fromZ, toX, toY, toZ, color = PALETTE.sodium) {
     const item = tracers[tracerIndex];
     tracerIndex = (tracerIndex + 1) % tracers.length;
     const attr = item.line.geometry.attributes.position;
-    // A short segment at the muzzle reads as a tracer without painting a
-    // screen-long streak over the frame.
-    attr.setXYZ(0, fromX + dx * 0.25, fromY + dy * 0.25, fromZ + dz * 0.25);
-    attr.setXYZ(1, fromX + dx * 1.8, fromY + dy * 1.8, fromZ + dz * 1.8);
+    // A tracer is drawn between two real points so the staged still shows the
+    // same line live play shows on its first frame.
+    attr.setXYZ(0, fromX, fromY, fromZ);
+    attr.setXYZ(1, toX, toY, toZ);
     attr.needsUpdate = true;
     item.line.material.color.setHex(color);
-    item.line.material.opacity = 0.55;
+    item.line.material.opacity = 0.9;
     item.line.visible = true;
-    item.life = 0.075;
+    item.life = 0.09;
+  }
+
+  function tracer(fromX, fromY, fromZ, dx, dy, dz, color = PALETTE.sodium, length = 4.5) {
+    tracerLine(fromX, fromY, fromZ, fromX + dx * length, fromY + dy * length, fromZ + dz * length, color);
   }
 
   function impact(x, y, z, dx, dy, dz) {
@@ -107,6 +123,14 @@ export function createEffects(scene) {
       sparkLife[k] = 0.24 + rng() * 0.2;
     }
     sparkAttr.needsUpdate = true;
+    const pop = hitPops[hitPopIndex];
+    hitPopIndex = (hitPopIndex + 1) % hitPops.length;
+    pop.sprite.position.set(x, y, z);
+    pop.sprite.scale.setScalar(0.17 + rng() * 0.05);
+    pop.sprite.material.opacity = 0.95;
+    pop.sprite.visible = true;
+    pop.life = 0.1;
+    pop.max = pop.life;
     smoke(x, y, z, 0.55);
   }
 
@@ -202,6 +226,14 @@ export function createEffects(scene) {
       blastLightLife -= dt;
       blastLight.intensity = Math.max(0, blastLightLife / 0.32) * 70;
     }
+    for (const item of hitPops) {
+      if (item.life <= 0) continue;
+      item.life -= dt;
+      const k = Math.max(0, item.life / item.max);
+      item.sprite.material.opacity = k * 0.95;
+      item.sprite.scale.setScalar(0.3 + (1 - k) * 0.22);
+      if (item.life <= 0) item.sprite.visible = false;
+    }
   }
 
   function reset() {
@@ -209,13 +241,14 @@ export function createEffects(scene) {
     for (const item of shells) { item.life = 0; item.mesh.visible = false; }
     for (const item of smokes) { item.life = 0; item.sprite.visible = false; }
     for (const item of blasts) { item.life = 0; item.sprite.visible = false; }
+    for (const item of hitPops) { item.life = 0; item.sprite.visible = false; }
     for (let i = 0; i < SPARKS; i++) { sparkLife[i] = 0; sparkPos[i * 3 + 1] = -100; }
     sparkAttr.needsUpdate = true;
     blastLight.intensity = 0;
     blastLightLife = 0;
   }
 
-  return { tracer, impact, smoke, shell, explosion, update, reset };
+  return { tracer, tracerLine, impact, smoke, shell, explosion, update, reset };
 }
 
 function radialTexture(size, stops) {

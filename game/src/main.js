@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 // Boot, fixed-step simulation and the two-pass render. Order matters: config,
 // state, input, util, nav, bots, rounds, map, player, weapon, effects, HUD,
-// audio, shot — the dossier then reads match logic before presentation.
+// audio, shot - the dossier then reads match logic before presentation.
 import { PALETTE } from './config.js';
 import { createState } from './state.js';
 import { createInput } from './input.js';
@@ -26,7 +26,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 1.78;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.autoClear = false;
 
@@ -37,13 +37,21 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 
 const vmScene = new THREE.Scene();
 const vmCamera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 5);
-vmScene.add(new THREE.HemisphereLight(0x8fb6d0, 0x1a2028, 1.5));
-const vmKey = new THREE.DirectionalLight(0xffd2a0, 3.0);
+vmScene.add(new THREE.HemisphereLight(0x8fb6d0, 0x1a2028, 1.35));
+const vmKey = new THREE.DirectionalLight(0xfff2e6, 1.75);
 vmKey.position.set(1.2, 2, 1.4);
 vmScene.add(vmKey);
-const vmFill = new THREE.DirectionalLight(PALETTE.cyan, 0.8);
+const vmFill = new THREE.DirectionalLight(PALETTE.cyan, 0.55);
 vmFill.position.set(-1.2, 0.4, 0.6);
 vmScene.add(vmFill);
+// A cool rim from the front so the barrel and receiver edges read against
+// the dark scene instead of merging into one silhouette.
+const vmRim = new THREE.DirectionalLight(0xa8c8dc, 1.15);
+vmRim.position.set(0.5, 0.9, -1.7);
+vmScene.add(vmRim);
+const vmBounce = new THREE.DirectionalLight(0x7f95a6, 0.5);
+vmBounce.position.set(-1.4, -0.6, -1.0);
+vmScene.add(vmBounce);
 
 const map = createMap(scene, renderer.capabilities.getMaxAnisotropy());
 const nav = createNav(map);

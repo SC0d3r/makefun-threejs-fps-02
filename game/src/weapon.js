@@ -13,64 +13,218 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   const flashMaterial = new THREE.SpriteMaterial({ map: makeFlashTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
   const flash = new THREE.Sprite(flashMaterial);
   flash.scale.setScalar(0.11);
-  flash.position.set(0, 0.03, -0.58);
+  // Sit on the muzzle's screen position: 32 mm higher made the flash float
+  // 25 px above the tracer's start in the still.
+  flash.position.set(0, 0.012, -0.612);
   flash.visible = false;
   group.add(flash);
   const flashLight = new THREE.PointLight(PALETTE.sodium, 0, 3, 2);
-  flashLight.position.set(0, 0.06, -0.5);
+  flashLight.position.set(0, 0.018, -0.58);
   group.add(flashLight);
-  const rim = new THREE.DirectionalLight(PALETTE.cyan, 1.4);
+  const rim = new THREE.DirectionalLight(PALETTE.cyan, 0.9);
   rim.position.set(-1.6, 0.9, -1.2);
   vmScene.add(rim);
 
-  const gunmetal = new THREE.MeshStandardMaterial({ color: 0x3a4652, metalness: 0.35, roughness: 0.45 });
-  const railMetal = new THREE.MeshStandardMaterial({ color: 0x8a9aa6, metalness: 0.32, roughness: 0.44 });
-  const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1c242c, metalness: 0.38, roughness: 0.5 });
-  const magMetal = new THREE.MeshStandardMaterial({ color: 0x4c5862, metalness: 0.3, roughness: 0.5 });
-  const glove = new THREE.MeshStandardMaterial({ color: 0x5f5a50, metalness: 0.05, roughness: 0.9 });
-  const accent = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, emissive: PALETTE.sodium, emissiveIntensity: 0.8, roughness: 0.5 });
+  // Dark, cool palette. The old light-grey rail and beige glove materials were
+  // what turned the viewmodel into a pile of pale crates on camera.
+  const receiverMat = new THREE.MeshStandardMaterial({ color: 0x2b3238, metalness: 0.3, roughness: 0.5 });
+  const polymerMat = new THREE.MeshStandardMaterial({ color: 0x3b4237, metalness: 0.05, roughness: 0.78 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x6c777f, metalness: 0.55, roughness: 0.38 });
+  const darkMetal = new THREE.MeshStandardMaterial({ color: 0x12171b, metalness: 0.4, roughness: 0.52 });
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x3a4247, metalness: 0.3, roughness: 0.55 });
+  const magMetal = new THREE.MeshStandardMaterial({ color: 0x2a3036, metalness: 0.22, roughness: 0.56 });
+  const glove = new THREE.MeshStandardMaterial({ color: 0x5f594e, metalness: 0.02, roughness: 0.9 });
+  const gloveEdge = new THREE.MeshStandardMaterial({ color: 0x776e5e, metalness: 0.02, roughness: 0.88 });
+  const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x39443b, roughness: 0.92 });
+  const rubberMat = new THREE.MeshStandardMaterial({ color: 0x1d2124, metalness: 0.02, roughness: 0.96 });
+  const accent = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, emissive: PALETTE.sodium, emissiveIntensity: 0.9, roughness: 0.5 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x0a2230, metalness: 0.9, roughness: 0.12, emissive: 0x123a4a, emissiveIntensity: 0.55 });
+  const dotMat = new THREE.MeshBasicMaterial({ color: 0xff3b2c });
 
-  function part(w, h, d, x, y, z, material, rx = 0) {
+  function part(w, h, d, x, y, z, material, rx = 0, parent = group) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
     mesh.position.set(x, y, z);
     mesh.rotation.x = rx;
-    group.add(mesh);
+    parent.add(mesh);
     return mesh;
   }
 
-  part(0.095, 0.105, 0.36, 0, 0, -0.05, gunmetal);
-  part(0.052, 0.022, 0.34, 0, 0.064, -0.04, railMetal);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.3, 10), darkMetal);
-  barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0, 0.012, -0.36);
-  group.add(barrel);
-  const muzzle = part(0.042, 0.042, 0.05, 0, 0.012, -0.515, darkMetal);
-  const muzzleRing = part(0.054, 0.054, 0.016, 0, 0.012, -0.545, railMetal);
-  const handguard = part(0.075, 0.066, 0.2, 0, 0, -0.27, magMetal);
-  const magazine = part(0.07, 0.15, 0.085, 0, -0.105, 0.0, magMetal, 0.18);
-  part(0.055, 0.11, 0.07, 0, -0.085, 0.13, gunmetal, -0.3);
-  const stock = part(0.064, 0.085, 0.18, 0, -0.004, 0.3, gunmetal);
-  part(0.03, 0.02, 0.03, 0, 0.043, -0.33, darkMetal);
-  part(0.016, 0.028, 0.02, 0, 0.06, -0.33, railMetal);
-  part(0.03, 0.026, 0.022, 0, 0.088, 0.08, railMetal);
-  part(0.05, 0.045, 0.09, 0, 0.095, -0.06, darkMetal);
-  part(0.038, 0.024, 0.012, 0, 0.1, -0.106, accent);
-  part(0.086, 0.026, 0.1, 0, -0.048, 0.0, railMetal);
-  part(0.006, 0.012, 0.22, 0.049, 0.014, -0.05, accent);
-  part(0.006, 0.012, 0.22, -0.049, 0.014, -0.05, accent);
-  const supportHand = part(0.085, 0.075, 0.12, -0.035, -0.078, -0.235, glove, 0.12);
-  supportHand.scale.setScalar(0.78);
-  const supportArm = part(0.075, 0.07, 0.16, -0.045, -0.13, -0.09, glove, -0.25);
-  supportArm.scale.setScalar(0.75);
-  part(0.08, 0.09, 0.11, 0.028, -0.1, 0.145, glove, 0.2).scale.setScalar(0.75);
-  const pump = part(0.09, 0.07, 0.22, 0, -0.026, -0.25, gunmetal);
-  const bolt = part(0.022, 0.024, 0.06, 0.06, 0.012, 0.02, accent);
+  function tube(radius, length, x, y, z, material, parent = group) {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 12), material);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.set(x, y, z);
+    parent.add(mesh);
+    return mesh;
+  }
+
+  // Receiver, rail and optic.
+  part(0.072, 0.078, 0.34, 0, 0.012, -0.04, receiverMat);
+  part(0.062, 0.05, 0.2, 0, -0.052, -0.05, receiverMat);
+  part(0.078, 0.018, 0.055, 0, -0.088, 0.02, darkMetal);
+  part(0.03, 0.012, 0.34, 0, 0.062, -0.04, railMat);
+  for (let i = 0; i < 4; i++) part(0.034, 0.007, 0.016, 0, 0.071, -0.15 + i * 0.06, railMat);
+  part(0.008, 0.03, 0.06, 0.038, 0.02, -0.1, darkMetal);
+  part(0.05, 0.018, 0.03, 0.01, 0.048, 0.13, railMat);
+
+  // Compact red-dot: the window faces the shooter, so the dot is visible in
+  // the frame and the housing reads as a sight rather than a scope tube.
+  part(0.034, 0.018, 0.08, 0, 0.076, -0.03, darkMetal);
+  part(0.048, 0.05, 0.07, 0, 0.106, -0.035, darkMetal);
+  part(0.054, 0.009, 0.056, 0, 0.136, -0.038, polymerMat);
+  const lensFront = new THREE.Mesh(new THREE.PlaneGeometry(0.038, 0.038), glassMat);
+  lensFront.position.set(0, 0.106, 0.0008);
+  group.add(lensFront);
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0062, 10), dotMat);
+  dot.position.set(0, 0.106, 0.0017);
+  group.add(dot);
+  const glint = new THREE.Mesh(new THREE.CircleGeometry(0.006, 8), new THREE.MeshBasicMaterial({ color: 0xcfe6f2 }));
+  glint.position.set(-0.009, 0.117, 0.0022);
+  group.add(glint);
+
+  // Barrel assembly. It lives in its own group so a shorter weapon can pull
+  // the whole front back without breaking the silhouette.
+  const front = new THREE.Group();
+  group.add(front);
+  const barrel = tube(0.014, 0.34, 0, 0.012, -0.36, steelMat, front);
+  part(0.034, 0.034, 0.05, 0, 0.022, -0.31, darkMetal, 0, front);
+  const handguard = part(0.074, 0.066, 0.22, 0, 0.002, -0.28, polymerMat, 0, front);
+  for (let i = 0; i < 3; i++) {
+    part(0.004, 0.026, 0.05, 0.038, -0.006, -0.21 - i * 0.06, darkMetal, 0, front);
+    part(0.004, 0.026, 0.05, -0.038, -0.006, -0.21 - i * 0.06, darkMetal, 0, front);
+  }
+  part(0.05, 0.012, 0.2, 0, -0.042, -0.28, steelMat, 0, front);
+  tube(0.026, 0.08, 0, 0.012, -0.575, darkMetal, front);
+  for (let i = 0; i < 3; i++) part(0.048, 0.009, 0.012, 0, 0.012, -0.588 + i * 0.021, steelMat, 0, front);
+  const bore = new THREE.Mesh(new THREE.CircleGeometry(0.011, 12), new THREE.MeshBasicMaterial({ color: 0x03060a }));
+  bore.position.set(0, 0.012, -0.6115);
+  front.add(bore);
+  part(0.012, 0.052, 0.014, 0, 0.062, -0.34, darkMetal, 0, front);
+  const muzzleRef = new THREE.Object3D();
+  muzzleRef.position.set(0, 0.012, -0.612);
+  front.add(muzzleRef);
+
+  // Magazine, grip, trigger guard and stock.
+  const magazine = part(0.058, 0.16, 0.082, 0, -0.15, 0.03, magMetal, 0.3);
+  part(0.064, 0.028, 0.09, 0, -0.228, -0.005, steelMat, 0.3);
+  const grip = part(0.048, 0.115, 0.062, 0, -0.135, 0.125, polymerMat, -0.32);
+  part(0.012, 0.05, 0.012, 0, -0.098, 0.064, darkMetal);
+  part(0.022, 0.02, 0.035, 0, -0.079, 0.075, steelMat);
+  part(0.012, 0.05, 0.012, 0, -0.098, 0.027, darkMetal);
+  part(0.05, 0.012, 0.06, 0, -0.121, 0.045, darkMetal);
+  // Solid skeleton stock: a deep polymer body with a comb and a thin rubber
+  // pad. The old stock was two rails and a full-size butt plate, which read on
+  // camera as a black card floating at the end of the receiver.
+  const stock = new THREE.Group();
+  group.add(stock);
+  tube(0.022, 0.12, 0, 0.005, 0.17, darkMetal, stock);
+  part(0.042, 0.074, 0.19, 0, -0.004, 0.265, polymerMat, 0, stock);
+  part(0.038, 0.03, 0.2, 0, 0.045, 0.265, polymerMat, 0, stock);
+  part(0.044, 0.052, 0.06, 0, -0.034, 0.345, polymerMat, 0, stock);
+  part(0.046, 0.084, 0.014, 0, -0.004, 0.372, rubberMat, 0, stock);
+  part(0.014, 0.032, 0.012, 0, -0.058, 0.3, steelMat, 0, stock);
+  part(0.008, 0.014, 0.05, 0, -0.028, 0.305, rubberMat, 0, stock);
+  part(0.036, 0.006, 0.17, 0, 0.041, 0.26, railMat, 0, stock);
+
+  // Support hand wrapped under the handguard: the palm sits on the near side,
+  // the fingers climb the visible flank and the thumb comes over the top, so
+  // the grip reads from the shooter's viewpoint.
+  const hands = new THREE.Group();
+  group.add(hands);
+  const supportHand = new THREE.Group();
+  hands.add(supportHand);
+  part(0.046, 0.086, 0.07, -0.044, -0.055, -0.29, glove, 0, supportHand);
+  part(0.02, 0.072, 0.066, -0.066, -0.05, -0.29, gloveEdge, 0, supportHand);
+  // Wide spacing and alternating shades: at 720p the old 3 mm gaps closed up
+  // and the four fingers read as one smooth wedge.
+  for (let i = 0; i < 4; i++) {
+    const z = -0.228 - i * 0.042;
+    const finger = part(0.019, 0.06, 0.026, -0.078, -0.004, z, i % 2 ? gloveEdge : glove, 0, supportHand);
+    finger.rotation.z = 1.25;
+    const tip = part(0.017, 0.026, 0.024, -0.09, 0.014, z, gloveEdge, 0, supportHand);
+    tip.rotation.z = 2.1;
+  }
+  // Thumb over the top of the handguard, the classic viewmodel grip read.
+  const supportThumb = part(0.028, 0.064, 0.032, -0.014, 0.052, -0.262, gloveEdge, 0, supportHand);
+  supportThumb.rotation.z = -1.0;
+  supportThumb.rotation.x = 0.2;
+  part(0.052, 0.028, 0.058, -0.044, -0.102, -0.275, gloveEdge, 0, supportHand);
+  part(0.058, 0.058, 0.052, -0.04, -0.142, -0.25, sleeveMat, 0, supportHand);
+  const supportArm = part(0.048, 0.048, 0.24, -0.03, -0.2, -0.15, sleeveMat, -0.5, supportHand);
+  supportArm.rotation.y = 0.2;
+
+  // Trigger hand on the camera side of the grip, with the same wide finger
+  // spacing so the knuckles separate from the receiver.
+  part(0.05, 0.086, 0.07, -0.016, -0.168, 0.152, glove, 0.12);
+  part(0.02, 0.072, 0.066, -0.04, -0.16, 0.152, gloveEdge, 0);
+  for (let i = 0; i < 3; i++) {
+    const z = 0.108 + i * 0.04;
+    const finger = part(0.019, 0.056, 0.026, -0.054, -0.122, z, i % 2 ? gloveEdge : glove, 0);
+    finger.rotation.x = 0.6;
+    const tip = part(0.017, 0.026, 0.024, -0.062, -0.104, z, gloveEdge, 0);
+    tip.rotation.x = 0.95;
+  }
+  const triggerThumb = part(0.028, 0.06, 0.034, -0.042, -0.072, 0.088, gloveEdge, 0);
+  triggerThumb.rotation.x = 0.2;
+  part(0.05, 0.028, 0.062, -0.026, -0.214, 0.168, gloveEdge, 0);
+  part(0.054, 0.054, 0.05, -0.02, -0.252, 0.19, sleeveMat, 0);
+  const triggerArm = part(0.048, 0.048, 0.24, -0.008, -0.32, 0.24, sleeveMat, -0.3);
+  triggerArm.rotation.y = -0.1;
+  const pump = part(0.09, 0.07, 0.22, 0, -0.026, -0.25, polymerMat);
+  const bolt = part(0.022, 0.024, 0.06, 0.06, 0.04, 0.02, steelMat);
+
+  front.add(flash);
+  front.add(flashLight);
+  flash.position.set(0, 0.03, -0.655);
+  flashLight.position.set(0, 0.06, -0.6);
+
+  // Two gloved hands that grip the charge while the plant is running. The
+  // palms are deliberately narrow and sit outside the screen bezel so the
+  // countdown stays readable.
+  const plantHands = new THREE.Group();
+  for (const side of [-1, 1]) {
+    const hand = new THREE.Group();
+    // Break the mirror: the right glove sits a little higher, closer and turned
+    // in, so the pair reads as two hands working instead of two clamps.
+    hand.position.set(side * (0.088 + (side > 0 ? 0.006 : 0)), -0.178 + (side > 0 ? 0.012 : -0.008), -0.6 + (side > 0 ? 0.03 : -0.01));
+    hand.rotation.set(-0.3 + (side > 0 ? 0.1 : -0.03), side * -0.6 + (side > 0 ? 0.12 : 0.03), side * (side > 0 ? 0.2 : 0.12));
+    plantHands.add(hand);
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.08, 0.042), glove);
+    hand.add(palm);
+    const knuckle = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.026, 0.024), gloveEdge);
+    knuckle.position.set(0, 0.038, 0.012);
+    hand.add(knuckle);
+    for (let f = 0; f < 4; f++) {
+      const inner = side < 0 ? f === 3 : f === 0;
+      const finger = new THREE.Mesh(new THREE.BoxGeometry(0.014, inner ? 0.058 : 0.05, 0.019), gloveEdge);
+      finger.position.set(-0.026 + f * 0.0175, 0.062, inner ? 0.016 : 0.004);
+      finger.rotation.x = -0.45;
+      finger.rotation.z = inner ? side * -0.22 : 0;
+      hand.add(finger);
+    }
+    const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.042, 0.02), glove);
+    thumb.position.set(side * -0.042, 0.02, 0.03);
+    thumb.rotation.z = side * 0.95;
+    thumb.rotation.x = -0.3;
+    hand.add(thumb);
+    const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.05, 0.05), sleeveMat);
+    cuff.position.set(0, -0.056, 0.01);
+    hand.add(cuff);
+    // The forearms angle outward and down instead of running toward the lens,
+    // which used to fill the bottom centre with a green faceted mass.
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.06, 0.2), sleeveMat);
+    forearm.position.set(side * 0.055, -0.15, 0.16);
+    forearm.rotation.x = -1.2;
+    forearm.rotation.y = side * -0.35;
+    hand.add(forearm);
+  }
+  plantHands.visible = false;
+  vmScene.add(plantHands);
 
   const layouts = {
-    pistol: { scale: 0.64, x: 0.24, y: -0.14, z: -0.44, stock: false, handguard: false, longBarrel: false, pump: false, bolt: true },
-    smg: { scale: 0.8, x: 0.26, y: -0.155, z: -0.52, stock: false, handguard: true, longBarrel: false, pump: false, bolt: false },
-    rifle: { scale: 0.84, x: 0.24, y: -0.12, z: -0.7, stock: true, handguard: true, longBarrel: true, pump: false, bolt: false },
-    shotgun: { scale: 0.86, x: 0.25, y: -0.13, z: -0.7, stock: true, handguard: false, longBarrel: true, pump: true, bolt: false },
+    pistol: { scale: 0.64, x: 0.24, y: -0.16, z: -0.7, stock: false, handguard: false, longBarrel: false, pump: false, bolt: true },
+    smg: { scale: 0.78, x: 0.25, y: -0.17, z: -0.82, stock: false, handguard: true, longBarrel: false, pump: false, bolt: false },
+    rifle: { scale: 0.74, x: 0.225, y: -0.17, z: -1.0, stock: true, handguard: true, longBarrel: true, pump: false, bolt: false },
+    shotgun: { scale: 0.82, x: 0.25, y: -0.175, z: -0.92, stock: true, handguard: false, longBarrel: true, pump: true, bolt: false },
   };
 
   let kick = 0;
@@ -87,14 +241,11 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     handguard.visible = layout.handguard;
     pump.visible = layout.pump;
     bolt.visible = layout.bolt;
-    barrel.scale.y = layout.longBarrel ? 1 : 0.62;
-    barrel.position.z = layout.longBarrel ? -0.36 : -0.26;
-    muzzle.position.z = layout.longBarrel ? -0.515 : -0.39;
-    muzzleRing.position.z = layout.longBarrel ? -0.545 : -0.42;
-    flash.position.z = layout.longBarrel ? -0.58 : -0.46;
-    flashLight.position.z = flash.position.z;
-    supportHand.position.z = layout.longBarrel ? -0.235 : -0.17;
-    supportArm.position.z = layout.longBarrel ? -0.09 : -0.05;
+    supportHand.visible = layout.handguard;
+    // A short weapon pulls the whole front group back so the muzzle stays in
+    // the frame and the hands stay on the handguard.
+    front.position.z = layout.longBarrel ? 0 : 0.15;
+    hands.position.z = layout.longBarrel ? 0 : 0.11;
   }
 
   function def() { return WEAPONS[state.weapon]; }
@@ -165,6 +316,10 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
 
     const pellets = weapon.pellets || 1;
     let anyHit = false;
+    let hitX = 0;
+    let hitY = 0;
+    let hitZ = 0;
+    let hasPoint = false;
     for (let p = 0; p < pellets; p++) {
       const sx = (rng() - 0.5) * 2 * spread;
       const sy = (rng() - 0.5) * 2 * spread;
@@ -180,9 +335,11 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
         const zoneMul = botHit.zone === 'head' ? weapon.head : botHit.zone === 'legs' ? weapon.legs : 1;
         bots.damage(botHit.bot, weapon.body * falloff * zoneMul, botHit.zone);
         effects.impact(botHit.x, botHit.y, botHit.z, dx, dy, dz);
+        if (!hasPoint) { hitX = botHit.x; hitY = botHit.y; hitZ = botHit.z; hasPoint = true; }
         anyHit = true;
       } else if (wallT < 120) {
         effects.impact(ox + dx * wallT, oy + dy * wallT, oz + dz * wallT, dx, dy, dz);
+        if (!hasPoint) { hitX = ox + dx * wallT; hitY = oy + dy * wallT; hitZ = oz + dz * wallT; hasPoint = true; }
       }
     }
 
@@ -199,7 +356,23 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     state.muzzle = 0.05;
     kick = 1;
     audio.shot(weapon.sound);
-    effects.tracer(ox + rx * 0.16 - ux * 0.1 + fx * 0.55, oy - 0.12 + fy * 0.55, oz + rz * 0.16 - uz * 0.1 + fz * 0.55, fx, fy, fz, PALETTE.sodium);
+    // The tracer starts exactly at the viewmodel muzzle, so the streak lines up
+    // with the barrel on screen instead of hanging in front of the player.
+    group.updateMatrixWorld(true);
+    const muzzleView = new THREE.Vector3();
+    muzzleRef.getWorldPosition(muzzleView);
+    const mvx = muzzleView.x / -muzzleView.z;
+    const mvy = muzzleView.y / -muzzleView.z;
+    let tdx = fx + rx * mvx + ux * mvy;
+    let tdy = fy + uy * mvy;
+    let tdz = fz + rz * mvx + uz * mvy;
+    const tlen = Math.hypot(tdx, tdy, tdz) || 1;
+    tdx /= tlen; tdy /= tlen; tdz /= tlen;
+    const tracerX = ox + tdx * 1.05;
+    const tracerY = oy + tdy * 1.05;
+    const tracerZ = oz + tdz * 1.05;
+    if (hasPoint) effects.tracerLine(tracerX, tracerY, tracerZ, hitX, hitY, hitZ, PALETTE.sodium);
+    else effects.tracerLine(tracerX, tracerY, tracerZ, ox + fx * 45, oy + fy * 45, oz + fz * 45, PALETTE.sodium);
     effects.shell(ox + rx * 0.22, oy - 0.14, oz + rz * 0.22, rx * 1.6 + (rng() - 0.5) * 0.4, 1.4 + rng() * 0.6, rz * 1.6);
     bots.hear(ox, oz, 30);
     hud.hitmarker(anyHit);
@@ -371,16 +544,18 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     group.visible = state.mode !== 'start' && state.mode !== 'buy' && state.alive && !state.grenade;
     if (group.visible) {
       const sway = Math.sin(state.time * 1.6) * 0.004 + Math.sin(state.bobPhase) * 0.006 * Math.min(1, state.player.speed / PLAYER.speed);
+      const plantDrop = state.plant.active ? 1 : 0;
       group.position.x = (layouts[state.weapon] || layouts.rifle).x + sway;
-      group.position.y = baseY - reloadSway * 0.1 + Math.cos(state.time * 1.3) * 0.003;
-      group.position.z = (layouts[state.weapon] || layouts.rifle).z + kick * 0.055;
-      group.rotation.x = 0.02 + kick * 0.12;
-      group.rotation.z = reloadSway * 0.35;
-      group.rotation.y = -0.05 + sway * 0.6;
+      group.position.y = baseY - reloadSway * 0.1 + Math.cos(state.time * 1.3) * 0.003 - plantDrop * 0.24;
+      group.position.z = (layouts[state.weapon] || layouts.rifle).z + kick * 0.055 + plantDrop * 0.06;
+      group.rotation.x = 0.02 + kick * 0.12 - plantDrop * 0.42;
+      group.rotation.z = reloadSway * 0.35 + plantDrop * 0.12;
+      group.rotation.y = 0.045 + sway * 0.6;
     }
     flash.visible = state.muzzle > 0;
     flashMaterial.opacity = state.muzzle > 0 ? 0.95 : 0;
     flashLight.intensity = state.muzzle > 0 ? 14 : 0;
+    plantHands.visible = group.visible && state.plant.active;
   }
 
   function resetRound() {

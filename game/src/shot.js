@@ -1,7 +1,7 @@
 // Deterministic screenshot scenes. Each entry calls the same spawner, round,
 // buy, plant and weapon functions as live play; staging only writes player
 // pose, score inputs and a freeze flag. Nothing is drawn as a fake overlay.
-import { MAP, PLAYER } from './config.js';
+import { PLAYER } from './config.js';
 import { clamp } from './util.js';
 
 export function readShot() {
@@ -61,8 +61,8 @@ export function createShot(state, deps) {
 
   function cover() {
     liveBase(2, 1, 3, 3250);
-    place(-22.5, 0.1, 1.0);
-    lookAt(-16, 1.2, -10);
+    place(-17.5, 0.12, -8.3);
+    lookAt(-16.0, 0.58, -10.0);
     state.health = 87;
     state.armor = 50;
     state.ammo.rifle.mag = 24;
@@ -70,6 +70,7 @@ export function createShot(state, deps) {
     state.plant.time = 0;
     rounds.completePlant('A');
     state.bomb.fuse = 37;
+    rounds.setBombYaw(Math.atan2(state.player.x - state.bomb.x, state.player.z - state.bomb.z));
     state.feed.length = 0;
     state.feedVersion += 1;
     const killed = bots.squad[2];
@@ -78,31 +79,37 @@ export function createShot(state, deps) {
     killed.drop.visible = false;
     const warden = bots.squad[0];
     const sable = bots.squad[1];
-    const wyaw = Math.atan2(state.player.x - (-16.5), state.player.z - (-12.5));
-    const syaw = Math.atan2(state.player.x - (-13.5), state.player.z - (-13));
-    bots.stage(warden, -16.5, -12.5, wyaw, 0.34);
-    bots.stage(sable, -13.5, -13, syaw, -0.3);
+    const wyaw = Math.atan2(state.player.x + 14.2, state.player.z + 14.7);
+    const syaw = Math.atan2(state.player.x + 13.6, state.player.z + 11.4);
+    bots.stage(warden, -14.2, -14.7, wyaw, 0.34);
+    bots.stage(sable, -13.6, -11.4, syaw, -0.3);
     state.money = 3250;
     state.kills = 1;
     state.plants = 1;
-    state.clock = 37;
+    state.clock = 52;
   }
 
   function firefight() {
     liveBase(2, 1, 5, 3600);
-    place(0, 2.3, 2);
+    place(17.8, 0, -4.8);
     const target = bots.squad[0];
-    bots.stage(target, -5.4, -8.5, 0);
-    bots.squad[1].group.visible = false;
-    const killed = bots.squad[2];
-    bots.damage(killed, 999, 'head');
-    killed.group.visible = false;
-    killed.drop.visible = false;
-    bots.stage(target, -5.4, -8.5, facePlayer(target), 0.2);
+    const mate = bots.squad[1];
+    const hidden = bots.squad[2];
+    hidden.group.visible = false;
+    hidden.drop.visible = false;
+    bots.stage(target, 15.6, -9.8, facePlayer(target), 0.06);
     target.alive = true;
     target.health = 100;
     target.group.visible = true;
-    lookAt(target.x, 1.62, target.z);
+    // The still is taken a beat after the hit, so the target leans off the
+    // round instead of standing at attention through it.
+    target.group.rotation.x = -0.07;
+    target.group.rotation.z = 0.05;
+    bots.stage(mate, 18.6, -10.9, facePlayer(mate), -0.14);
+    mate.alive = true;
+    mate.health = 100;
+    mate.group.visible = true;
+    lookAt(target.x, 1.25, target.z);
     state.health = 64;
     state.armor = 0;
     state.ammo.rifle.mag = 20;
@@ -114,7 +121,14 @@ export function createShot(state, deps) {
     if (weapon.fire()) {
       state.shotTimer = 0;
       state.consecutive = 0;
-      state.spread = 0.02;
+      // Keep the staged reticle tight; a 22 px spread gap read as a broken
+      // crosshair in the still.
+      state.spread = 0.003;
+      // The still is captured after the shot, so the recoil kick would move the
+      // camera off the line the tracer actually travelled. Reset it so the
+      // crosshair and the hit point agree in the frame.
+      state.recoilPitch = 0;
+      state.recoilYaw = 0;
     }
     state.money = 3600;
     state.kills = 1;
@@ -123,37 +137,38 @@ export function createShot(state, deps) {
   function plant() {
     liveBase(2, 1, 4, 2900);
     state.player.crouch = true;
-    place(-17.5, 0, -7.5);
-    lookAt(-16, 0.15, -10);
+    place(-17.05, 0, -9.15);
+    lookAt(-16, 0.48, -10);
     state.health = 92;
     state.armor = 0;
     state.ammo.rifle.mag = 30;
     state.ammo.rifle.reserve = 90;
     state.clock = 68;
     rounds.stageCharge('A', 0.64);
+    rounds.setBombYaw(Math.atan2(state.player.x - state.bomb.x, state.player.z - state.bomb.z));
     const warden = bots.squad[0];
-    bots.stage(warden, -15, -15.5, Math.atan2(state.player.x + 15, state.player.z + 15.5), 0.12);
+    const wyaw = Math.atan2(state.player.x + 13.6, state.player.z + 13.8);
+    bots.stage(warden, -13.6, -13.8, wyaw, 0.1);
     bots.squad[1].group.visible = false;
+    bots.squad[1].drop.visible = false;
     bots.squad[2].group.visible = false;
+    bots.squad[2].drop.visible = false;
     state.feed.length = 0;
     state.feedVersion += 1;
   }
 
   function buy() {
     rounds.startBuyPhase();
-    state.buyClock = 9;
-    state.money = 4150;
+    state.buyClock = 12;
+    state.money = 1250;
     state.round = 4;
     state.scoreYou = 2;
     state.scoreRust = 1;
     state.primary = null;
-    place(MAP.playerSpawn.x, 0, MAP.playerSpawn.z);
-    state.yaw = 0;
-    state.pitch = 0;
-    state.recoilPitch = 0;
-    state.recoilYaw = 0;
+    place(17.8, 0, -4.8);
+    lookAt(15.6, 1.2, -9.8);
     hud.setOverlay('buy');
-    hud.setHover(0);
+    hud.setHover(1);
     state.feed.length = 0;
     state.feedVersion += 1;
   }
@@ -171,6 +186,7 @@ export function createShot(state, deps) {
     // One zero-time weapon tick exposes the muzzle flash and viewmodel pose
     // that the staged shot would show on its first simulated frame.
     weapon.update(0);
+    if (state.bomb.active) rounds.paintDisplay(state.bomb.fuse);
     state.promptText = '';
     state.promptTime = 0;
     hud.setPrompt('', 0);
