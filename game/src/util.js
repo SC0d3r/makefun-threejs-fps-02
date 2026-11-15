@@ -1,11 +1,10 @@
 // Pure helpers plus the one AABB ray test shared by bullets, bot vision,
 // grenade line of sight and defuse interruption. All numbers, no allocation.
-export const TAU = Math.PI * 2;
+const TAU = Math.PI * 2;
 
 export function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 export function lerp(a, b, t) { return a + (b - a) * t; }
 export function damp(a, b, rate, dt) { return lerp(a, b, 1 - Math.exp(-rate * dt)); }
-export function sign(v) { return v < 0 ? -1 : 1; }
 
 export function mulberry32(seed) {
   let a = seed >>> 0;
@@ -18,7 +17,6 @@ export function mulberry32(seed) {
   };
 }
 
-export function rand(rng, lo, hi) { return lo + (hi - lo) * rng(); }
 
 // Slab test. Returns the entry distance or Infinity. Boxes are axis aligned and
 // use minx/miny/minz/maxx/maxy/maxz so both map colliders and bot parts share it.
@@ -59,10 +57,6 @@ export function rayAABB(ox, oy, oz, dx, dy, dz, box) {
     if (tmin > tmax) return Infinity;
   }
   return tmin;
-}
-
-export function pointInBox(x, y, z, box, pad = 0) {
-  return x >= box.minx - pad && x <= box.maxx + pad && y >= box.miny - pad && y <= box.maxy + pad && z >= box.minz - pad && z <= box.maxz + pad;
 }
 
 export function fmtTime(seconds) {

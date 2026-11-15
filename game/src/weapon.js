@@ -12,19 +12,22 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   vmScene.add(group);
   const flashMaterial = new THREE.SpriteMaterial({ map: makeFlashTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
   const flash = new THREE.Sprite(flashMaterial);
-  flash.scale.setScalar(0.16);
+  flash.scale.setScalar(0.11);
   flash.position.set(0, 0.03, -0.58);
   flash.visible = false;
   group.add(flash);
-  const flashLight = new THREE.PointLight(PALETTE.sodium, 0, 2.4, 2);
+  const flashLight = new THREE.PointLight(PALETTE.sodium, 0, 3, 2);
   flashLight.position.set(0, 0.06, -0.5);
   group.add(flashLight);
+  const rim = new THREE.DirectionalLight(PALETTE.cyan, 1.4);
+  rim.position.set(-1.6, 0.9, -1.2);
+  vmScene.add(rim);
 
-  const gunmetal = new THREE.MeshStandardMaterial({ color: 0x252d35, metalness: 0.72, roughness: 0.34 });
-  const railMetal = new THREE.MeshStandardMaterial({ color: 0x71818c, metalness: 0.62, roughness: 0.3 });
-  const darkMetal = new THREE.MeshStandardMaterial({ color: 0x141a20, metalness: 0.8, roughness: 0.3 });
-  const magMetal = new THREE.MeshStandardMaterial({ color: 0x39434c, metalness: 0.5, roughness: 0.45 });
-  const glove = new THREE.MeshStandardMaterial({ color: 0x7e7466, metalness: 0.05, roughness: 0.9 });
+  const gunmetal = new THREE.MeshStandardMaterial({ color: 0x3a4652, metalness: 0.35, roughness: 0.45 });
+  const railMetal = new THREE.MeshStandardMaterial({ color: 0x8a9aa6, metalness: 0.32, roughness: 0.44 });
+  const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1c242c, metalness: 0.38, roughness: 0.5 });
+  const magMetal = new THREE.MeshStandardMaterial({ color: 0x4c5862, metalness: 0.3, roughness: 0.5 });
+  const glove = new THREE.MeshStandardMaterial({ color: 0x5f5a50, metalness: 0.05, roughness: 0.9 });
   const accent = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, emissive: PALETTE.sodium, emissiveIntensity: 0.8, roughness: 0.5 });
 
   function part(w, h, d, x, y, z, material, rx = 0) {
@@ -35,30 +38,39 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     return mesh;
   }
 
-  const receiver = part(0.095, 0.105, 0.36, 0, 0, -0.05, gunmetal);
-  const rail = part(0.052, 0.022, 0.3, 0, 0.064, -0.1, railMetal);
+  part(0.095, 0.105, 0.36, 0, 0, -0.05, gunmetal);
+  part(0.052, 0.022, 0.34, 0, 0.064, -0.04, railMetal);
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.3, 10), darkMetal);
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.012, -0.36);
   group.add(barrel);
   const muzzle = part(0.042, 0.042, 0.05, 0, 0.012, -0.515, darkMetal);
+  const muzzleRing = part(0.054, 0.054, 0.016, 0, 0.012, -0.545, railMetal);
   const handguard = part(0.075, 0.066, 0.2, 0, 0, -0.27, magMetal);
   const magazine = part(0.07, 0.15, 0.085, 0, -0.105, 0.0, magMetal, 0.18);
-  const grip = part(0.055, 0.11, 0.07, 0, -0.085, 0.13, gunmetal, -0.3);
+  part(0.055, 0.11, 0.07, 0, -0.085, 0.13, gunmetal, -0.3);
   const stock = part(0.064, 0.085, 0.18, 0, -0.004, 0.3, gunmetal);
-  const frontSight = part(0.018, 0.03, 0.02, 0, 0.09, -0.3, darkMetal);
-  const rearSight = part(0.03, 0.022, 0.025, 0, 0.085, 0.12, darkMetal);
+  part(0.03, 0.02, 0.03, 0, 0.043, -0.33, darkMetal);
+  part(0.016, 0.028, 0.02, 0, 0.06, -0.33, railMetal);
+  part(0.03, 0.026, 0.022, 0, 0.088, 0.08, railMetal);
+  part(0.05, 0.045, 0.09, 0, 0.095, -0.06, darkMetal);
+  part(0.038, 0.024, 0.012, 0, 0.1, -0.106, accent);
+  part(0.086, 0.026, 0.1, 0, -0.048, 0.0, railMetal);
+  part(0.006, 0.012, 0.22, 0.049, 0.014, -0.05, accent);
+  part(0.006, 0.012, 0.22, -0.049, 0.014, -0.05, accent);
   const supportHand = part(0.085, 0.075, 0.12, -0.035, -0.078, -0.235, glove, 0.12);
+  supportHand.scale.setScalar(0.78);
   const supportArm = part(0.075, 0.07, 0.16, -0.045, -0.13, -0.09, glove, -0.25);
-  const triggerHand = part(0.08, 0.09, 0.11, 0.028, -0.1, 0.145, glove, 0.2);
+  supportArm.scale.setScalar(0.75);
+  part(0.08, 0.09, 0.11, 0.028, -0.1, 0.145, glove, 0.2).scale.setScalar(0.75);
   const pump = part(0.09, 0.07, 0.22, 0, -0.026, -0.25, gunmetal);
   const bolt = part(0.022, 0.024, 0.06, 0.06, 0.012, 0.02, accent);
 
   const layouts = {
     pistol: { scale: 0.64, x: 0.24, y: -0.14, z: -0.44, stock: false, handguard: false, longBarrel: false, pump: false, bolt: true },
     smg: { scale: 0.8, x: 0.26, y: -0.155, z: -0.52, stock: false, handguard: true, longBarrel: false, pump: false, bolt: false },
-    rifle: { scale: 0.9, x: 0.28, y: -0.175, z: -0.62, stock: true, handguard: true, longBarrel: true, pump: false, bolt: false },
-    shotgun: { scale: 0.94, x: 0.285, y: -0.18, z: -0.64, stock: true, handguard: false, longBarrel: true, pump: true, bolt: false },
+    rifle: { scale: 0.84, x: 0.24, y: -0.12, z: -0.7, stock: true, handguard: true, longBarrel: true, pump: false, bolt: false },
+    shotgun: { scale: 0.86, x: 0.25, y: -0.13, z: -0.7, stock: true, handguard: false, longBarrel: true, pump: true, bolt: false },
   };
 
   let kick = 0;
@@ -78,6 +90,7 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     barrel.scale.y = layout.longBarrel ? 1 : 0.62;
     barrel.position.z = layout.longBarrel ? -0.36 : -0.26;
     muzzle.position.z = layout.longBarrel ? -0.515 : -0.39;
+    muzzleRing.position.z = layout.longBarrel ? -0.545 : -0.42;
     flash.position.z = layout.longBarrel ? -0.58 : -0.46;
     flashLight.position.z = flash.position.z;
     supportHand.position.z = layout.longBarrel ? -0.235 : -0.17;
@@ -367,7 +380,7 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     }
     flash.visible = state.muzzle > 0;
     flashMaterial.opacity = state.muzzle > 0 ? 0.95 : 0;
-    flashLight.intensity = state.muzzle > 0 ? 9 : 0;
+    flashLight.intensity = state.muzzle > 0 ? 14 : 0;
   }
 
   function resetRound() {

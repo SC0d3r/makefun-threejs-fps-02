@@ -1,10 +1,8 @@
 // Nav grid and A*. Typed arrays and fixed scratch storage mean a replan costs
 // no garbage, and string-pulling removes the staircase look of 4-neighbour paths.
-import { MAP } from './config.js';
 
 const COLS = 60;
 const ROWS = 44;
-const CELL = 1;
 const X0 = -30;
 const Z0 = -22;
 const SIZE = COLS * ROWS;

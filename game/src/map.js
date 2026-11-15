@@ -102,7 +102,7 @@ export function createMap(scene, anisotropy = 8) {
     const h = hazard.getContext('2d');
     h.fillStyle = '#12191f';
     h.fillRect(0, 0, 128, 128);
-    h.strokeStyle = '#ffb15c';
+    h.strokeStyle = '#d99a55';
     h.lineWidth = 16;
     for (let i = -128; i < 256; i += 44) {
       h.beginPath();
@@ -146,13 +146,14 @@ export function createMap(scene, anisotropy = 8) {
   function makeMaterials(t) {
     const tint = (hex, scale) => new THREE.Color(hex).multiplyScalar(scale);
     return {
-      floor: new THREE.MeshStandardMaterial({ map: t.floor, color: 0x9aa6b0, roughness: 0.3, metalness: 0.2 }),
+      floor: new THREE.MeshStandardMaterial({ map: t.floor, color: 0xa8b4be, roughness: 0.52, metalness: 0.08 }),
       wall: new THREE.MeshStandardMaterial({ map: t.wall, color: 0x8d99a3, roughness: 0.82, metalness: 0.08 }),
       concrete: new THREE.MeshStandardMaterial({ map: t.wall, color: 0x6f7a83, roughness: 0.88, metalness: 0.04 }),
       steel: new THREE.MeshStandardMaterial({ map: t.ribs, color: 0x7e909c, roughness: 0.44, metalness: 0.42 }),
       dark: new THREE.MeshStandardMaterial({ map: t.corrugated, color: 0x4b5963, roughness: 0.56, metalness: 0.35 }),
       rust: new THREE.MeshStandardMaterial({ map: t.ribs, color: tint(PALETTE.rust, 0.9), roughness: 0.62, metalness: 0.28 }),
       crate: new THREE.MeshStandardMaterial({ map: t.corrugated, color: 0x87949e, roughness: 0.7, metalness: 0.15 }),
+      trim: new THREE.MeshStandardMaterial({ color: 0x151d25, roughness: 0.82, metalness: 0.14 }),
       puddle: new THREE.MeshStandardMaterial({ color: 0x10202b, roughness: 0.05, metalness: 0.85, transparent: true, opacity: 0.62, depthWrite: false }),
       sodium: new THREE.MeshStandardMaterial({ color: PALETTE.sodium, emissive: PALETTE.sodium, emissiveIntensity: 2.4, roughness: 0.4 }),
       cyan: new THREE.MeshStandardMaterial({ color: PALETTE.cyan, emissive: PALETTE.cyan, emissiveIntensity: 2.1, roughness: 0.4 }),
@@ -212,6 +213,10 @@ export function createMap(scene, anisotropy = 8) {
     for (const [x, z, w, d, mat] of containers) {
       box(x, 0, z, w, 2.4, d, mat);
       box(x, 2.4, z, w * 0.96, 0.08, d * 0.96, mats.dark, false, false);
+      // Dark corner posts and top/bottom trim break up the largest flat faces.
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(x + sx * (w / 2 - 0.04), 0, z + sz * (d / 2 - 0.04), 0.08, 2.4, 0.08, mats.trim, false, false);
+      box(x, 0, z, w + 0.01, 0.07, d + 0.01, mats.trim, false, false);
+      box(x, 2.3, z, w + 0.01, 0.07, d + 0.01, mats.trim, false, false);
     }
     // Stencilled ids sit on container faces, never near a staged camera.
     decal(-27, 1.45, 3.01, 2.4, 0.62, textures.quay);
@@ -230,12 +235,11 @@ export function createMap(scene, anisotropy = 8) {
 
     for (const [x, z] of [[-8, 16], [8, 16], [-10, -4], [10, -4], [-14, -4], [20, -4]]) {
       box(x, 0, z, 3, 1.1, 0.7, mats.concrete);
-      decal(x, 0.72, z + 0.36, 2.8, 0.3, textures.hazard, 0, 0.8);
-      decal(x, 0.72, z - 0.36, 2.8, 0.3, textures.hazard, Math.PI, 0.8);
+      decal(x, 0.72, z + 0.36, 2.8, 0.3, textures.hazard, 0, 0.45);
+      decal(x, 0.72, z - 0.36, 2.8, 0.3, textures.hazard, Math.PI, 0.45);
     }
 
     box(21.5, 0, -10, 3, 3.2, 8, mats.dark);
-    decal(19.98, 1.7, -10, 3.4, 0.7, textures.dock, -Math.PI / 2, 0.7);
     box(-22, 0, -16, 1.2, 6, 1.2, mats.dark);
     box(-16, 5.5, -16, 12, 0.5, 0.5, mats.rust, false, false);
     box(-21, 4.6, -16, 9, 0.25, 0.25, mats.dark, false, false);
@@ -268,8 +272,8 @@ export function createMap(scene, anisotropy = 8) {
   }
 
   function addLights() {
-    scene.add(new THREE.HemisphereLight(0x26384a, 0x0a0d12, 0.95));
-    const moon = new THREE.DirectionalLight(0x9db7d8, 2.1);
+    scene.add(new THREE.HemisphereLight(0x26384a, 0x0a0d12, 1.15));
+    const moon = new THREE.DirectionalLight(0x9db7d8, 2.4);
     moon.position.set(-18, 28, 12);
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);

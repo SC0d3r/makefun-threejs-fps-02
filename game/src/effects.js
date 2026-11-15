@@ -24,7 +24,7 @@ export function createEffects(scene) {
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(6);
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.LineBasicMaterial({ color: PALETTE.sodium, transparent: true, opacity: 0, depthWrite: false });
+    const material = new THREE.LineBasicMaterial({ color: PALETTE.sodium, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
     const line = new THREE.Line(geometry, material);
     line.frustumCulled = false;
     line.visible = false;
@@ -42,7 +42,7 @@ export function createEffects(scene) {
   sparkAttr.setUsage(THREE.DynamicDrawUsage);
   sparkGeometry.setAttribute('position', sparkAttr);
   const sparkMaterial = new THREE.PointsMaterial({
-    color: PALETTE.sodium, size: 0.07, transparent: true, opacity: 0.95,
+    color: PALETTE.sodium, size: 0.09, transparent: true, opacity: 1,
     depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
   });
   const sparks = new THREE.Points(sparkGeometry, sparkMaterial);
@@ -88,26 +88,26 @@ export function createEffects(scene) {
     attr.setXYZ(1, fromX + dx * 1.8, fromY + dy * 1.8, fromZ + dz * 1.8);
     attr.needsUpdate = true;
     item.line.material.color.setHex(color);
-    item.line.material.opacity = 0.85;
+    item.line.material.opacity = 0.55;
     item.line.visible = true;
     item.life = 0.075;
   }
 
   function impact(x, y, z, dx, dy, dz) {
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       const k = sparkIndex;
       sparkIndex = (sparkIndex + 1) % SPARKS;
       sparkPos[k * 3] = x;
       sparkPos[k * 3 + 1] = y;
       sparkPos[k * 3 + 2] = z;
-      const spread = 2.2;
+      const spread = 2.0;
       sparkVel[k * 3] = -dx * 1.3 + (rng() - 0.5) * spread;
       sparkVel[k * 3 + 1] = -dy * 1.3 + rng() * 1.7;
       sparkVel[k * 3 + 2] = -dz * 1.3 + (rng() - 0.5) * spread;
-      sparkLife[k] = 0.22 + rng() * 0.2;
+      sparkLife[k] = 0.24 + rng() * 0.2;
     }
     sparkAttr.needsUpdate = true;
-    if (rng() < 0.6) smoke(x, y, z, 0.6);
+    smoke(x, y, z, 0.55);
   }
 
   function smoke(x, y, z, scale = 1) {
@@ -152,7 +152,7 @@ export function createEffects(scene) {
     for (const item of tracers) {
       if (item.life <= 0) continue;
       item.life -= dt;
-      item.line.material.opacity = Math.max(0, item.life / 0.075) * 0.85;
+      item.line.material.opacity = Math.max(0, item.life / 0.075) * 0.55;
       if (item.life <= 0) item.line.visible = false;
     }
     for (let i = 0; i < SPARKS; i++) {

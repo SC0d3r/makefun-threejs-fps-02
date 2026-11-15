@@ -38,7 +38,7 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 const vmScene = new THREE.Scene();
 const vmCamera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 5);
 vmScene.add(new THREE.HemisphereLight(0x8fb6d0, 0x1a2028, 1.5));
-const vmKey = new THREE.DirectionalLight(0xffd2a0, 2.4);
+const vmKey = new THREE.DirectionalLight(0xffd2a0, 3.0);
 vmKey.position.set(1.2, 2, 1.4);
 vmScene.add(vmKey);
 const vmFill = new THREE.DirectionalLight(PALETTE.cyan, 0.8);

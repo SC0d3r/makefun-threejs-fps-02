@@ -17,13 +17,13 @@ export function createBots(state, scene, map, nav, player, hud, audio, effects) 
   const rng = mulberry32(4242);
   const squad = [];
   const scratch = { hit: false, bot: null, zone: '', t: Infinity, x: 0, y: 0, z: 0 };
-  const vestMat = new THREE.MeshStandardMaterial({ color: PALETTE.rust, roughness: 0.66, metalness: 0.18 });
-  const plateMat = new THREE.MeshStandardMaterial({ color: 0x6e3620, roughness: 0.5, metalness: 0.3, emissive: PALETTE.rust, emissiveIntensity: 0.12 });
-  const clothMat = new THREE.MeshStandardMaterial({ color: 0x1a222a, roughness: 0.9, metalness: 0.05 });
-  const helmetMat = new THREE.MeshStandardMaterial({ color: 0x111820, roughness: 0.55, metalness: 0.4 });
-  const gunMat = new THREE.MeshStandardMaterial({ color: 0x222a32, roughness: 0.42, metalness: 0.55 });
-  const visorCyan = new THREE.MeshStandardMaterial({ color: PALETTE.cyan, emissive: PALETTE.cyan, emissiveIntensity: 1.35, roughness: 0.35 });
-  const visorWarm = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, emissive: PALETTE.sodium, emissiveIntensity: 1.1, roughness: 0.35 });
+  const vestMat = new THREE.MeshStandardMaterial({ color: PALETTE.rust, roughness: 0.66, metalness: 0.18, emissive: PALETTE.rust, emissiveIntensity: 0.22 });
+  const plateMat = new THREE.MeshStandardMaterial({ color: 0x6e3620, roughness: 0.5, metalness: 0.3, emissive: PALETTE.rust, emissiveIntensity: 0.22 });
+  const clothMat = new THREE.MeshStandardMaterial({ color: 0x131a22, roughness: 0.9, metalness: 0.05 });
+  const helmetMat = new THREE.MeshStandardMaterial({ color: 0x222c36, roughness: 0.55, metalness: 0.35 });
+  const gunMat = new THREE.MeshStandardMaterial({ color: 0x2a333c, roughness: 0.42, metalness: 0.4 });
+  const visorCyan = new THREE.MeshStandardMaterial({ color: PALETTE.cyan, emissive: PALETTE.cyan, emissiveIntensity: 1.6, roughness: 0.35 });
+  const visorWarm = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, emissive: PALETTE.sodium, emissiveIntensity: 1.5, roughness: 0.35 });
 
   const defs = [
     { name: 'WARDEN', role: 'anchorA', route: ROUTES.anchorA, weapon: 'smg', spawn: SPAWNS[0], visor: visorWarm },

@@ -121,7 +121,7 @@ export function createHud(state) {
 
   function basePrompt() {
     if (state.mode === 'start') return '';
-    if (state.mode === 'buy') return state.buyOpen ? 'CLICK A CARD — B TO CLOSE' : 'PRESS B TO BUY';
+    if (state.mode === 'buy') return state.buyOpen ? 'CLICK A CARD' : 'PRESS B TO BUY';
     if (state.mode === 'ended') return 'ROUND OVER';
     if (state.mode === 'matchEnd') return 'MATCH OVER';
     if (state.plant.active) return `PLANTING ${Math.min(100, Math.floor((state.plant.time / ROUND.plantTime) * 100))}%`;
@@ -146,8 +146,8 @@ export function createHud(state) {
     let bombText = 'CHARGE CARRIED';
     if (!state.alive) bombText = 'TIDE DOWN';
     else if (state.bomb.planted) bombText = state.bomb.defusing ? 'CHARGE DEFUSING' : `CHARGE PLANTED ${fmtTime(state.bomb.fuse)}`;
-    else if (state.plant.active && state.plant.time > 0) bombText = `CHARGE PLANTING ${Math.min(100, Math.floor((state.plant.time / ROUND.plantTime) * 100))}%`;
-    else if (state.mode === 'buy') bombText = 'CHARGE STOWED';
+    else if (state.plant.active && state.plant.time > 0) bombText = 'CHARGE PLANTING';
+    else if (state.mode === 'buy') bombText = '';
     setText(el.bomb, bombText);
     el.bomb.classList.toggle('armed', state.bomb.planted);
 
