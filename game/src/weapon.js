@@ -1,461 +1,393 @@
-// Four hitscan weapons, the viewmodel, recoil and thrown grenades.
+// Weapons own fire/reload/switch, the pooled grenades and the viewmodel scene.
+// Empty-mag handling lives first in fire(); a dry pull spends nothing and the
+// HUD crosshair spread is written from the same numbers used by the ray.
 import * as THREE from 'three';
-import { WEAPONS, GRENADES, PLAYER } from './config.js';
-import { angleDiff, clamp, lineOfSight } from './util.js';
+import { PALETTE, PLAYER, WEAPONS } from './config.js';
+import { clamp, damp, mulberry32 } from './util.js';
+import { makeFlashTexture } from './effects.js';
 
-const raycaster = new THREE.Raycaster();
-const rayOrigin = new THREE.Vector3();
-const forward = new THREE.Vector3();
-const right = new THREE.Vector3();
-const up = new THREE.Vector3();
-const shotDir = new THREE.Vector3();
-const hitPoint = new THREE.Vector3();
-const muzzleWorld = new THREE.Vector3();
-const grenadeForward = new THREE.Vector3();
+export function createWeapon(state, scene, vmScene, map, bots, player, effects, audio, hud, input) {
+  const rng = mulberry32(917);
+  const group = new THREE.Group();
+  vmScene.add(group);
+  const flashMaterial = new THREE.SpriteMaterial({ map: makeFlashTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+  const flash = new THREE.Sprite(flashMaterial);
+  flash.scale.setScalar(0.16);
+  flash.position.set(0, 0.03, -0.58);
+  flash.visible = false;
+  group.add(flash);
+  const flashLight = new THREE.PointLight(PALETTE.sodium, 0, 2.4, 2);
+  flashLight.position.set(0, 0.06, -0.5);
+  group.add(flashLight);
 
-function weaponMaterial(color, metalness = 0.4, roughness = 0.45) {
-  return new THREE.MeshStandardMaterial({ color, metalness, roughness, emissive: color, emissiveIntensity: 0.08 });
-}
+  const gunmetal = new THREE.MeshStandardMaterial({ color: 0x252d35, metalness: 0.72, roughness: 0.34 });
+  const railMetal = new THREE.MeshStandardMaterial({ color: 0x71818c, metalness: 0.62, roughness: 0.3 });
+  const darkMetal = new THREE.MeshStandardMaterial({ color: 0x141a20, metalness: 0.8, roughness: 0.3 });
+  const magMetal = new THREE.MeshStandardMaterial({ color: 0x39434c, metalness: 0.5, roughness: 0.45 });
+  const glove = new THREE.MeshStandardMaterial({ color: 0x7e7466, metalness: 0.05, roughness: 0.9 });
+  const accent = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, emissive: PALETTE.sodium, emissiveIntensity: 0.8, roughness: 0.5 });
 
-function addPart(group, geo, material, x, y, z) {
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.position.set(x, y, z);
-  group.add(mesh);
-  return mesh;
-}
+  function part(w, h, d, x, y, z, material, rx = 0) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    mesh.position.set(x, y, z);
+    mesh.rotation.x = rx;
+    group.add(mesh);
+    return mesh;
+  }
 
-export function createWeapon(state, camera, scene, effects, audio, player, input) {
-  const dark = weaponMaterial(0x202a33, 0.55, 0.38);
-  const steel = weaponMaterial(0x596873, 0.65, 0.32);
-  const rail = weaponMaterial(0xb9c2c6, 0.5, 0.3);
-  const glove = weaponMaterial(0x6d5848, 0.05, 0.9);
-  const magMat = weaponMaterial(0x35434d, 0.55, 0.4);
-  const led = new THREE.MeshBasicMaterial({ color: 0x5fd6d0 });
+  const receiver = part(0.095, 0.105, 0.36, 0, 0, -0.05, gunmetal);
+  const rail = part(0.052, 0.022, 0.3, 0, 0.064, -0.1, railMetal);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.3, 10), darkMetal);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.012, -0.36);
+  group.add(barrel);
+  const muzzle = part(0.042, 0.042, 0.05, 0, 0.012, -0.515, darkMetal);
+  const handguard = part(0.075, 0.066, 0.2, 0, 0, -0.27, magMetal);
+  const magazine = part(0.07, 0.15, 0.085, 0, -0.105, 0.0, magMetal, 0.18);
+  const grip = part(0.055, 0.11, 0.07, 0, -0.085, 0.13, gunmetal, -0.3);
+  const stock = part(0.064, 0.085, 0.18, 0, -0.004, 0.3, gunmetal);
+  const frontSight = part(0.018, 0.03, 0.02, 0, 0.09, -0.3, darkMetal);
+  const rearSight = part(0.03, 0.022, 0.025, 0, 0.085, 0.12, darkMetal);
+  const supportHand = part(0.085, 0.075, 0.12, -0.035, -0.078, -0.235, glove, 0.12);
+  const supportArm = part(0.075, 0.07, 0.16, -0.045, -0.13, -0.09, glove, -0.25);
+  const triggerHand = part(0.08, 0.09, 0.11, 0.028, -0.1, 0.145, glove, 0.2);
+  const pump = part(0.09, 0.07, 0.22, 0, -0.026, -0.25, gunmetal);
+  const bolt = part(0.022, 0.024, 0.06, 0.06, 0.012, 0.02, accent);
 
-  const viewRoot = new THREE.Group();
-  camera.add(viewRoot);
-  scene.add(camera);
-  const viewLight = new THREE.PointLight(0xffe0b8, 2.4, 2.6, 2);
-  viewLight.position.set(0.2, 0.16, -0.15);
-  viewRoot.add(viewLight);
-  const models = {};
-
-  const buildModel = (id) => {
-    const group = new THREE.Group();
-    const def = WEAPONS[id];
-    const long = id === 'shotgun' ? 0.46 : id === 'pistol' ? 0.24 : 0.38;
-    addPart(group, new THREE.BoxGeometry(0.085, 0.1, long), dark, 0, 0, -long * 0.5);
-    addPart(group, new THREE.BoxGeometry(0.07, 0.022, long * 0.72), rail, 0, 0.061, -long * 0.48);
-    addPart(group, new THREE.BoxGeometry(0.03, 0.03, id === 'pistol' ? 0.2 : 0.34), steel, 0, 0.008, -long - 0.11);
-    addPart(group, new THREE.BoxGeometry(0.05, 0.056, 0.15), steel, 0, -0.018, -long - 0.16);
-    const mag = addPart(group, new THREE.BoxGeometry(0.052, id === 'shotgun' ? 0.1 : 0.15, 0.075), magMat, 0, id === 'shotgun' ? -0.09 : -0.11, -0.07);
-    if (id === 'pistol') {
-      mag.rotation.x = 0.3;
-      addPart(group, new THREE.BoxGeometry(0.07, 0.13, 0.075), dark, 0, -0.1, 0.04);
-    } else {
-      addPart(group, new THREE.BoxGeometry(0.075, 0.085, 0.19), dark, 0, -0.005, 0.22);
-      addPart(group, new THREE.BoxGeometry(0.07, 0.06, 0.1), rail, 0, 0.052, 0.03);
-    }
-    addPart(group, new THREE.BoxGeometry(0.055, 0.105, 0.075), glove, 0.045, -0.095, 0.045);
-    addPart(group, new THREE.BoxGeometry(0.06, 0.08, 0.12), glove, -0.038, -0.075, -long * 0.72);
-    addPart(group, new THREE.BoxGeometry(0.058, 0.06, 0.09), glove, 0.03, -0.052, -long * 0.5);
-    addPart(group, new THREE.BoxGeometry(0.018, 0.018, 0.018), led, 0.035, 0.045, -0.06);
-    group.userData.mag = mag;
-    group.userData.length = long;
-    group.visible = false;
-    viewRoot.add(group);
-    return group;
+  const layouts = {
+    pistol: { scale: 0.64, x: 0.24, y: -0.14, z: -0.44, stock: false, handguard: false, longBarrel: false, pump: false, bolt: true },
+    smg: { scale: 0.8, x: 0.26, y: -0.155, z: -0.52, stock: false, handguard: true, longBarrel: false, pump: false, bolt: false },
+    rifle: { scale: 0.9, x: 0.28, y: -0.175, z: -0.62, stock: true, handguard: true, longBarrel: true, pump: false, bolt: false },
+    shotgun: { scale: 0.94, x: 0.285, y: -0.18, z: -0.64, stock: true, handguard: false, longBarrel: true, pump: true, bolt: false },
   };
 
-  for (const id of Object.keys(WEAPONS)) models[id] = buildModel(id);
+  let kick = 0;
+  let reloadSway = 0;
+  let baseY = -0.175;
 
-  const grenadeHand = new THREE.Group();
-  addPart(grenadeHand, new THREE.SphereGeometry(0.055, 10, 8), weaponMaterial(0x33452f, 0.2, 0.8), 0, 0, 0);
-  addPart(grenadeHand, new THREE.BoxGeometry(0.06, 0.02, 0.03), new THREE.MeshBasicMaterial({ color: 0xffb15c }), 0, 0.05, 0);
-  const throwGlove = addPart(grenadeHand, new THREE.BoxGeometry(0.075, 0.075, 0.11), glove, 0.05, -0.04, 0.02);
-  grenadeHand.visible = false;
-  grenadeHand.position.set(0.26, -0.2, -0.42);
-  viewRoot.add(grenadeHand);
+  function applyLayout() {
+    const id = state.weapon;
+    const layout = layouts[id] || layouts.rifle;
+    group.scale.setScalar(layout.scale);
+    group.position.set(layout.x, layout.y, layout.z);
+    baseY = layout.y;
+    stock.visible = layout.stock;
+    handguard.visible = layout.handguard;
+    pump.visible = layout.pump;
+    bolt.visible = layout.bolt;
+    barrel.scale.y = layout.longBarrel ? 1 : 0.62;
+    barrel.position.z = layout.longBarrel ? -0.36 : -0.26;
+    muzzle.position.z = layout.longBarrel ? -0.515 : -0.39;
+    flash.position.z = layout.longBarrel ? -0.58 : -0.46;
+    flashLight.position.z = flash.position.z;
+    supportHand.position.z = layout.longBarrel ? -0.235 : -0.17;
+    supportArm.position.z = layout.longBarrel ? -0.09 : -0.05;
+  }
 
-  const muzzleSprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: (() => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-        g.addColorStop(0, 'rgba(255,255,238,1)');
-        g.addColorStop(0.22, 'rgba(255,198,100,0.95)');
-        g.addColorStop(0.55, 'rgba(255,145,55,0.35)');
-        g.addColorStop(1, 'rgba(255,120,30,0)');
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, 64, 64);
-        return new THREE.CanvasTexture(canvas);
-      })(),
-      color: 0xffd28a,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
-  muzzleSprite.scale.set(0.12, 0.12, 1);
-  muzzleSprite.visible = false;
-  viewRoot.add(muzzleSprite);
-  const muzzleLight = new THREE.PointLight(0xffc078, 0, 4, 2);
-  viewRoot.add(muzzleLight);
-  let flashTimer = 0;
+  function def() { return WEAPONS[state.weapon]; }
 
-  const grenades = [];
-  const grenadeGeo = new THREE.SphereGeometry(0.075, 8, 6);
-  const grenadeMat = new THREE.MeshStandardMaterial({ color: 0x394a37, roughness: 0.7, metalness: 0.25 });
-  for (let i = 0; i < 6; i += 1) {
-    const mesh = new THREE.Mesh(grenadeGeo, grenadeMat);
+  function equip(id) {
+    if (id !== 'pistol' && id !== 'smg' && id !== 'rifle' && id !== 'shotgun') return;
+    if (id !== 'pistol' && state.primary !== id) return;
+    state.weapon = id;
+    state.grenade = null;
+    state.reload = 0;
+    state.switchTimer = 0.18;
+    applyLayout();
+  }
+
+  function selectGrenade(kind) {
+    if (kind === 'frag' && state.grenades.frag <= 0) return;
+    if (kind === 'flash' && state.grenades.flash <= 0) return;
+    state.grenade = kind;
+    state.reload = 0;
+    state.switchTimer = 0.12;
+  }
+
+  function reload() {
+    const weapon = def();
+    const ammo = state.ammo[state.weapon];
+    if (state.grenade || state.reload > 0 || ammo.mag >= weapon.mag || ammo.reserve <= 0) return;
+    state.reload = weapon.reload;
+    state.reloadTotal = weapon.reload;
+    audio.reload();
+  }
+
+  function eyeHeight() { return state.player.crouch ? PLAYER.eyeCrouch : PLAYER.eyeStand; }
+
+  function fire() {
+    if (state.mode !== 'live' && state.mode !== 'planted') return false;
+    if (!state.alive || state.grenade || state.reload > 0 || state.switchTimer > 0) return false;
+    const weapon = def();
+    if (state.shotTimer > 0) return false;
+    const ammo = state.ammo[state.weapon];
+    // Empty magazine blocks the shot before any ammo, accuracy or tracer work.
+    if (ammo.mag <= 0) {
+      if (input.firePressed) {
+        audio.dry();
+        state.shotTimer = 0.32;
+        hud.setPrompt('PRESS R TO RELOAD', 0.5);
+      }
+      return false;
+    }
+
+    const oy = state.player.y + eyeHeight();
+    const ox = state.player.x;
+    const oz = state.player.z;
+    const pitch = state.pitch + state.recoilPitch;
+    const yaw = state.yaw + state.recoilYaw;
+    const cp = Math.cos(pitch);
+    const fx = -Math.sin(yaw) * cp;
+    const fy = Math.sin(pitch);
+    const fz = -Math.cos(yaw) * cp;
+    const rx = Math.cos(yaw);
+    const rz = -Math.sin(yaw);
+    const ux = -rz * fy;
+    const uy = rz * fx - rx * fz;
+    const uz = rx * fy;
+    const crouchFactor = state.player.crouch ? 0.55 : 1;
+    const moveFactor = clamp(state.player.speed / PLAYER.speed, 0, 1);
+    const spread = (weapon.spread * crouchFactor + weapon.move * moveFactor) * (1 + state.consecutive * 0.2);
+    state.spread = spread;
+
+    const pellets = weapon.pellets || 1;
+    let anyHit = false;
+    for (let p = 0; p < pellets; p++) {
+      const sx = (rng() - 0.5) * 2 * spread;
+      const sy = (rng() - 0.5) * 2 * spread;
+      let dx = fx + rx * sx + ux * sy;
+      let dy = fy + uy * sy;
+      let dz = fz + rz * sx + uz * sy;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      dx /= len; dy /= len; dz /= len;
+      const wallT = map.raycast(ox, oy, oz, dx, dy, dz).t;
+      const botHit = bots.raycast(ox, oy, oz, dx, dy, dz, Math.min(120, wallT));
+      if (botHit.hit) {
+        const falloff = 1 - clamp((botHit.t - 15) / 30, 0, 1) * 0.3;
+        const zoneMul = botHit.zone === 'head' ? weapon.head : botHit.zone === 'legs' ? weapon.legs : 1;
+        bots.damage(botHit.bot, weapon.body * falloff * zoneMul, botHit.zone);
+        effects.impact(botHit.x, botHit.y, botHit.z, dx, dy, dz);
+        anyHit = true;
+      } else if (wallT < 120) {
+        effects.impact(ox + dx * wallT, oy + dy * wallT, oz + dz * wallT, dx, dy, dz);
+      }
+    }
+
+    state.ammo[state.weapon].mag -= 1;
+    state.shots += 1;
+    if (anyHit) state.hits += 1;
+    state.shotTimer = weapon.gap;
+    state.consecutive += 1;
+    state.consecutiveTimer = 0.28;
+    state.spread = Math.min(0.09, spread);
+    state.recoilPitch += weapon.recoil;
+    state.recoilYaw += (rng() - 0.5) * weapon.recoil * 0.6;
+    state.shake = Math.min(0.5, state.shake + weapon.recoil * 2.2);
+    state.muzzle = 0.05;
+    kick = 1;
+    audio.shot(weapon.sound);
+    effects.tracer(ox + rx * 0.16 - ux * 0.1 + fx * 0.55, oy - 0.12 + fy * 0.55, oz + rz * 0.16 - uz * 0.1 + fz * 0.55, fx, fy, fz, PALETTE.sodium);
+    effects.shell(ox + rx * 0.22, oy - 0.14, oz + rz * 0.22, rx * 1.6 + (rng() - 0.5) * 0.4, 1.4 + rng() * 0.6, rz * 1.6);
+    bots.hear(ox, oz, 30);
+    hud.hitmarker(anyHit);
+    if (state.ammo[state.weapon].mag <= 0) hud.setPrompt('PRESS R TO RELOAD', 0.6);
+    return true;
+  }
+
+  function throwGrenade() {
+    if (state.mode !== 'live' && state.mode !== 'planted') return;
+    if (!state.alive || !state.grenade) return;
+    if (state.grenades[state.grenade] <= 0) return;
+    const kind = state.grenade;
+    const item = projectiles.find((p) => !p.active);
+    if (!item) return;
+    state.grenades[kind] -= 1;
+    const pitch = state.pitch;
+    const yaw = state.yaw;
+    const cp = Math.cos(pitch);
+    const fx = -Math.sin(yaw) * cp;
+    const fy = Math.sin(pitch) + 0.18;
+    const fz = -Math.cos(yaw) * cp;
+    item.active = true;
+    item.kind = kind;
+    item.x = state.player.x + fx * 0.35;
+    item.y = state.player.y + eyeHeight() - 0.08;
+    item.z = state.player.z + fz * 0.35;
+    item.vx = fx * 9;
+    item.vy = fy * 9;
+    item.vz = fz * 9;
+    item.fuse = kind === 'frag' ? 0.9 : 1.2;
+    item.mesh.visible = true;
+    item.mesh.position.set(item.x, item.y, item.z);
+    item.mesh.material = kind === 'frag' ? fragMaterial : flashMaterialSolid;
+    state.grenade = null;
+    audio.toss();
+    hud.setPrompt(kind === 'frag' ? 'FRAG OUT' : 'FLASH OUT', 0.5);
+  }
+
+  const fragMaterial = new THREE.MeshStandardMaterial({ color: 0x2c343b, roughness: 0.6, metalness: 0.3 });
+  const flashMaterialSolid = new THREE.MeshStandardMaterial({ color: 0x9aa6ae, roughness: 0.4, metalness: 0.5, emissive: PALETTE.cyan, emissiveIntensity: 0.25 });
+  const projectiles = [];
+  for (let i = 0; i < 4; i++) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.13, 0.11), fragMaterial);
     mesh.visible = false;
     scene.add(mesh);
-    grenades.push({ mesh, vel: new THREE.Vector3(), life: 0, type: 'frag', trail: 0 });
+    projectiles.push({ mesh, active: false, kind: 'frag', x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, fuse: 0 });
   }
-  let grenadeCursor = 0;
 
-  let viewKick = 0;
-  let reloadDip = 0;
-  let bobTime = 0;
-
-  const hideModels = () => {
-    for (const id of Object.keys(models)) models[id].visible = false;
-    grenadeHand.visible = false;
-  };
-
-  const select = (id) => {
-    if (!WEAPONS[id] || !state.weapon.owned[id]) return false;
-    state.weapon.current = id;
-    state.player.grenadeSelect = null;
-    state.weapon.reloading = 0;
-    state.weapon.cooldown = Math.max(state.weapon.cooldown, 0.18);
-    hideModels();
-    models[id].visible = true;
-    return true;
-  };
-
-  const selectGrenade = (type) => {
-    if (!GRENADES[type] || state.player.grenades[type] <= 0) return false;
-    state.player.grenadeSelect = type;
-    hideModels();
-    grenadeHand.visible = true;
-    return true;
-  };
-
-  const current = () => WEAPONS[state.weapon.current];
-
-  const currentSpread = () => {
-    const def = current();
-    const p = state.player;
-    const moveT = clamp(p.speed / PLAYER.speed, 0, 1);
-    let spread = def.spread + (def.spreadMove - def.spread) * moveT;
-    spread *= 1 + state.weapon.spread;
-    if (p.crouch > 0.5) spread *= 0.55;
-    else if (p.walk) spread *= 0.8;
-    return spread;
-  };
-
-  const syncMuzzleWorld = () => {
-    const p = state.player;
-    const cp = Math.cos(p.pitch);
-    forward.set(-Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp);
-    right.set(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
-    up.set(0, 0, 0).crossVectors(right, forward).normalize();
-    muzzleWorld.set(p.pos.x, p.pos.y + p.eye, p.pos.z).addScaledVector(right, 0.22).addScaledVector(up, -0.16).addScaledVector(forward, 0.48);
-  };
-
-  const beginFlash = (seconds = 0.05) => {
-    flashTimer = seconds;
-    muzzleSprite.visible = true;
-    muzzleSprite.material.opacity = 1;
-    muzzleLight.intensity = 14;
-    muzzleSprite.position.set(0.02, 0.02, -0.62);
-  };
-
-  const fire = () => {
-    const w = state.weapon;
-    const def = current();
-    const ammo = w.ammo[w.current];
-    if (w.reloading > 0) return;
-    if (ammo.mag <= 0) {
-      w.cooldown = 0.22;
-      if (audio) audio.dry();
-      return;
-    }
-    ammo.mag -= 1;
-    w.cooldown = def.gap;
-    w.spread = Math.min(0.9, w.spread + 0.2);
-    state.player.firedAt = 0;
-    state.stats.shots += def.pellets;
-    viewKick = 1;
-    player.addShake(def.recoil * 0.45);
-    state.player.pitch = clamp(state.player.pitch + def.recoil, -1.47, 1.47);
-    state.player.yaw += (state.rng() - 0.5) * def.kick;
-    if (audio) audio.shot(w.current);
-    beginFlash(0.05);
-    syncMuzzleWorld();
-
-    const spread = currentSpread();
-    const p = state.player;
-    const cp = Math.cos(p.pitch);
-    forward.set(-Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp);
-    right.set(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
-    up.set(0, 0, 0).crossVectors(right, forward).normalize();
-    const eyeY = p.pos.y + p.eye;
-    let visibleTracers = 0;
-    for (let pellet = 0; pellet < def.pellets; pellet += 1) {
-      const cone = def.pellets > 1 ? 0.07 : spread;
-      const angle = Math.sqrt(state.rng()) * cone;
-      const theta = state.rng() * Math.PI * 2;
-      const sx = Math.tan(angle) * Math.cos(theta);
-      const sy = Math.tan(angle) * Math.sin(theta);
-      shotDir.copy(forward).addScaledVector(right, sx).addScaledVector(up, sy).normalize();
-      rayOrigin.set(p.pos.x, eyeY, p.pos.z);
-      raycaster.set(rayOrigin, shotDir);
-      raycaster.far = def.range;
-      const hits = raycaster.intersectObjects(state.shootables, false);
-      let endX = p.pos.x + shotDir.x * def.range;
-      let endY = eyeY + shotDir.y * def.range;
-      let endZ = p.pos.z + shotDir.z * def.range;
-      if (hits.length > 0) {
-        const hit = hits[0];
-        hitPoint.copy(hit.point);
-        endX = hitPoint.x;
-        endY = hitPoint.y;
-        endZ = hitPoint.z;
-        const bot = hit.object.userData.bot;
-        if (bot && !bot.dead) {
-          const zone = hit.object.userData.zone || 'body';
-          const dist = hit.distance;
-          const falloff = 1 - 0.3 * clamp((dist - 15) / 30, 0, 1);
-          let dmg = def.damage * falloff;
-          if (zone === 'head') dmg *= def.head;
-          else if (zone === 'legs') dmg *= def.leg;
-          state.stats.hits += 1;
-          state.hitMarker = 0.18;
-          if (audio) audio.hit();
-          if (state.botAPI) state.botAPI.hit(bot, zone, dmg, hitPoint);
-        } else {
-          effects.impact(hitPoint.x, hitPoint.y, hitPoint.z, hit.face ? hit.face.normal.x : 0, hit.face ? hit.face.normal.y : 1, hit.face ? hit.face.normal.z : 0);
-        }
+  function detonate(item) {
+    item.active = false;
+    item.mesh.visible = false;
+    if (item.kind === 'frag') {
+      effects.explosion(item.x, 0.1, item.z);
+      audio.explosion();
+      state.shake = Math.min(0.8, state.shake + 0.6);
+      for (const bot of bots.squad) {
+        if (!bot.alive) continue;
+        const bx = bot.x;
+        const by = bot.y + 1.15;
+        const bz = bot.z;
+        const dx = bx - item.x;
+        const dy = by - item.y;
+        const dz = bz - item.z;
+        const distance = Math.hypot(dx, dy, dz);
+        if (distance > 5.2) continue;
+        const len = distance || 1;
+        if (map.blocked(item.x, item.y, item.z, dx / len, dy / len, dz / len, distance)) continue;
+        const amount = 130 - (Math.min(distance, 5) / 5) * 120;
+        bots.damage(bot, amount, 'body');
       }
-      if (visibleTracers < 3) {
-        effects.tracer(muzzleWorld.x, muzzleWorld.y, muzzleWorld.z, endX, endY, endZ);
-        visibleTracers += 1;
-      }
-    }
-    effects.shell(muzzleWorld.x, muzzleWorld.y - 0.02, muzzleWorld.z, 0.8 + state.rng(), 1.2, 0.3);
-    if (state.botAPI) state.botAPI.hearing(p.pos.x, p.pos.z, 30);
-  };
-
-  const startReload = () => {
-    const w = state.weapon;
-    const def = current();
-    const ammo = w.ammo[w.current];
-    if (w.reloading > 0 || ammo.mag >= def.mag || ammo.reserve <= 0) return;
-    w.reloading = def.reload;
-    w.spread = 0;
-    if (audio) audio.reload();
-  };
-
-  const finishReload = () => {
-    const w = state.weapon;
-    const def = current();
-    const ammo = w.ammo[w.current];
-    const need = def.mag - ammo.mag;
-    const take = Math.min(need, ammo.reserve);
-    ammo.mag += take;
-    ammo.reserve -= take;
-    reloadDip = 0;
-  };
-
-  const throwGrenade = () => {
-    const type = state.player.grenadeSelect;
-    if (!type || state.player.grenades[type] <= 0) return;
-    const def = GRENADES[type];
-    const g = grenades[grenadeCursor];
-    grenadeCursor = (grenadeCursor + 1) % grenades.length;
-    const p = state.player;
-    const cp = Math.cos(p.pitch);
-    grenadeForward.set(-Math.sin(p.yaw) * cp, Math.sin(p.pitch) + 0.16, -Math.cos(p.yaw) * cp).normalize();
-    g.mesh.visible = true;
-    g.mesh.position.set(p.pos.x + grenadeForward.x * 0.45, p.pos.y + p.eye - 0.12, p.pos.z + grenadeForward.z * 0.45);
-    g.vel.copy(grenadeForward).multiplyScalar(14);
-    g.life = def.fuse;
-    g.type = type;
-    g.trail = 0;
-    state.player.grenades[type] -= 1;
-    state.player.grenadeSelect = null;
-    hideModels();
-    models[state.weapon.current].visible = true;
-    if (audio) audio.throw();
-  };
-
-  const grenadeBoom = (g) => {
-    const def = GRENADES[g.type];
-    const x = g.mesh.position.x;
-    const y = Math.max(0.2, g.mesh.position.y);
-    const z = g.mesh.position.z;
-    g.mesh.visible = false;
-    g.life = 0;
-    effects.explosion(x, y, z, g.type === 'frag' ? 1.5 : 0.8);
-    if (audio) audio.explosion(g.type === 'frag' ? 1 : 0.6);
-    if (state.botAPI) state.botAPI.hearing(x, z, 45, true);
-    const p = state.player;
-    const dx = p.pos.x - x;
-    const dz = p.pos.z - z;
-    const dist = Math.hypot(dx, dz);
-    if (g.type === 'frag') {
-      player.addShake(clamp(1.2 - dist / 8, 0.1, 0.9));
-      if (state.botAPI) state.botAPI.explosion(x, z, def.radius, def.damage);
-      if (dist < def.radius && dist > 0.01 && lineOfSight(state, x, 1, z, p.pos.x, p.pos.y + 1.2, p.pos.z)) {
-        player.takeDamage(def.damage * (1 - dist / def.radius) + 8, x, z);
+      const pdx = state.player.x - item.x;
+      const pdz = state.player.z - item.z;
+      const pd = Math.hypot(pdx, pdz);
+      if (pd < 5 && !map.blocked(item.x, item.y + 0.1, item.z, pdx / (pd || 1), 0, pdz / (pd || 1), pd)) {
+        player.damage(40 - pd * 5, item.x, item.z);
       }
     } else {
-      if (audio) audio.flashRing();
-      if (state.botAPI) state.botAPI.flash(x, z, def.radius, def.blind);
-      if (dist < def.radius) {
-        const bearing = Math.atan2(x - p.pos.x, -(z - p.pos.z));
-        if (Math.abs(angleDiff(p.yaw, bearing)) < 1.5) player.blind(def.blind);
+      effects.explosion(item.x, 0.1, item.z);
+      audio.flash();
+      bots.flash(item.x, item.z, 9, 2.5);
+      const fx = -Math.sin(state.yaw);
+      const fz = -Math.cos(state.yaw);
+      const dx = item.x - state.player.x;
+      const dz = item.z - state.player.z;
+      const distance = Math.hypot(dx, dz) || 1;
+      if (distance < 12 && (fx * dx + fz * dz) / distance > 0.15 && !map.blocked(state.player.x, state.player.y + 1.55, state.player.z, dx / distance, 0, dz / distance, distance)) {
+        state.flash = 1;
       }
     }
-  };
+  }
 
-  const update = (dt) => {
-    const w = state.weapon;
-    const p = state.player;
-    w.cooldown = Math.max(0, w.cooldown - dt);
-    w.spread = Math.max(0, w.spread - dt * 2.5);
-    if (w.reloading > 0) {
-      w.reloading -= dt;
-      reloadDip = Math.min(1, reloadDip + dt * 6);
-      if (w.reloading <= 0) {
-        w.reloading = 0;
-        finishReload();
+  function updateProjectiles(dt) {
+    for (const item of projectiles) {
+      if (!item.active) continue;
+      item.fuse -= dt;
+      const px = item.x;
+      const py = item.y;
+      const pz = item.z;
+      item.vy -= 20 * dt;
+      item.x += item.vx * dt;
+      item.y += item.vy * dt;
+      item.z += item.vz * dt;
+      if (item.y < 0.12) {
+        item.y = 0.12;
+        item.vy = Math.abs(item.vy) * 0.38;
+        item.vx *= 0.7;
+        item.vz *= 0.7;
+      }
+      const dx = item.x - px;
+      const dy = item.y - py;
+      const dz = item.z - pz;
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance > 0.0001) {
+        const hit = map.raycast(px, py, pz, dx / distance, dy / distance, dz / distance);
+        if (hit.t < distance - 0.02) {
+          item.x = px + (dx / distance) * Math.max(0, hit.t - 0.06);
+          item.y = py + (dy / distance) * Math.max(0, hit.t - 0.06);
+          item.z = pz + (dz / distance) * Math.max(0, hit.t - 0.06);
+          item.vx *= -0.35;
+          item.vz *= -0.35;
+          item.vy *= 0.3;
+        }
+      }
+      item.mesh.position.set(item.x, item.y, item.z);
+      item.mesh.rotation.x += dt * 7;
+      item.mesh.rotation.z += dt * 5;
+      if (item.fuse <= 0) detonate(item);
+    }
+  }
+
+  function update(dt) {
+    state.shotTimer = Math.max(0, state.shotTimer - dt);
+    state.switchTimer = Math.max(0, state.switchTimer - dt);
+    state.muzzle = Math.max(0, state.muzzle - dt);
+    state.flash = Math.max(0, state.flash - dt * 1.4);
+    state.spread = damp(state.spread, 0, 9, dt);
+    if (state.consecutive > 0) {
+      state.consecutiveTimer = (state.consecutiveTimer || 0) - dt;
+      if (state.consecutiveTimer <= 0) state.consecutive = 0;
+    }
+    if (state.reload > 0) {
+      state.reload -= dt;
+      if (state.reload <= 0) {
+        state.reload = 0;
+        const weapon = def();
+        const ammo = state.ammo[state.weapon];
+        const take = Math.min(weapon.mag - ammo.mag, ammo.reserve);
+        ammo.mag += take;
+        ammo.reserve -= take;
       }
     }
-    viewKick = Math.max(0, viewKick - dt * 10);
-    if (flashTimer > 0) {
-      flashTimer -= dt;
-      muzzleSprite.material.opacity = Math.max(0, flashTimer / 0.05);
-      muzzleLight.intensity = Math.max(0, flashTimer / 0.05) * 14;
-      if (flashTimer <= 0) {
-        muzzleSprite.visible = false;
-        muzzleLight.intensity = 0;
+    if (state.mode === 'live' || state.mode === 'planted') {
+      if (input.pressed.has('Digit1')) equip('pistol');
+      if (input.pressed.has('Digit2') && state.primary) equip(state.primary);
+      if (input.pressed.has('Digit3')) selectGrenade('frag');
+      if (input.pressed.has('Digit4')) selectGrenade('flash');
+      if (input.pressed.has('KeyR')) reload();
+      if (input.pressed.has('KeyG')) throwGrenade();
+      if (state.alive && !state.grenade) {
+        const weapon = def();
+        const wants = weapon.auto ? input.mouseDown : input.firePressed;
+        if (wants) fire();
       }
     }
-    bobTime += dt;
-    const arms = models[w.current];
-    const sway = p.moving ? Math.sin(bobTime * 9) * 0.004 : Math.sin(bobTime * 1.5) * 0.0015;
-    viewRoot.position.set(0.26 + sway * 0.5, -0.22 + Math.abs(sway) + (w.reloading > 0 ? -0.09 * reloadDip : 0), -0.5 + viewKick * 0.035);
-    viewRoot.rotation.x = -viewKick * 0.06;
-    viewRoot.rotation.z = sway * 0.4;
-    if (arms && arms.userData.mag) {
-      arms.userData.mag.position.y = -0.11 - (w.reloading > 0 ? reloadDip * 0.16 : 0);
+    updateProjectiles(dt);
+
+    kick = damp(kick, 0, 15, dt);
+    reloadSway = damp(reloadSway, state.reload > 0 ? 1 : 0, 9, dt);
+    group.visible = state.mode !== 'start' && state.mode !== 'buy' && state.alive && !state.grenade;
+    if (group.visible) {
+      const sway = Math.sin(state.time * 1.6) * 0.004 + Math.sin(state.bobPhase) * 0.006 * Math.min(1, state.player.speed / PLAYER.speed);
+      group.position.x = (layouts[state.weapon] || layouts.rifle).x + sway;
+      group.position.y = baseY - reloadSway * 0.1 + Math.cos(state.time * 1.3) * 0.003;
+      group.position.z = (layouts[state.weapon] || layouts.rifle).z + kick * 0.055;
+      group.rotation.x = 0.02 + kick * 0.12;
+      group.rotation.z = reloadSway * 0.35;
+      group.rotation.y = -0.05 + sway * 0.6;
     }
+    flash.visible = state.muzzle > 0;
+    flashMaterial.opacity = state.muzzle > 0 ? 0.95 : 0;
+    flashLight.intensity = state.muzzle > 0 ? 9 : 0;
+  }
 
-    if (!p.alive || state.mode !== 'playing' || state.paused || state.flags.buyOpen || state.flags.roundEnd || state.flags.matchEnd) {
-      return;
+  function resetRound() {
+    for (const id of ['pistol', 'smg', 'rifle', 'shotgun']) {
+      state.ammo[id].mag = WEAPONS[id].mag;
+      state.ammo[id].reserve = WEAPONS[id].reserve;
     }
-    if (state.round.phase !== 'live' && state.round.phase !== 'planted') return;
+    state.weapon = state.primary || 'pistol';
+    state.grenade = null;
+    state.reload = 0;
+    state.shotTimer = 0;
+    state.consecutive = 0;
+    state.spread = 0;
+    state.muzzle = 0;
+    for (const item of projectiles) { item.active = false; item.mesh.visible = false; }
+    applyLayout();
+  }
 
-    if (input.pressed('KeyR')) startReload();
-    if (input.pressed('Digit1')) select('pistol');
-    if (input.pressed('Digit2')) {
-      if (state.weapon.owned.rifle || state.weapon.owned.smg || state.weapon.owned.shotgun) {
-        select(state.weapon.primary || 'rifle');
-      }
-    }
-    if (input.pressed('Digit3')) selectGrenade('frag');
-    if (input.pressed('Digit4')) selectGrenade('flash');
-    if (input.pressed('KeyG')) throwGrenade();
+  function accuracy() { return state.shots > 0 ? Math.round((state.hits / state.shots) * 100) : 0; }
 
-    if (w.reloading > 0 || p.grenadeSelect) return;
-    const def = current();
-    const wants = def.auto ? input.mouse.down : input.mouse.clicked;
-    if (wants && w.cooldown <= 0) fire();
-  };
-
-  const updateGrenades = (dt) => {
-    for (const g of grenades) {
-      if (!g.mesh.visible || g.life <= 0) continue;
-      g.life -= dt;
-      g.vel.y -= 17 * dt;
-      g.mesh.position.x += g.vel.x * dt;
-      g.mesh.position.y += g.vel.y * dt;
-      g.mesh.position.z += g.vel.z * dt;
-      g.trail += dt;
-      if (g.mesh.position.y < 0.08) {
-        g.mesh.position.y = 0.08;
-        g.vel.y = Math.abs(g.vel.y) * 0.32;
-        g.vel.x *= 0.55;
-        g.vel.z *= 0.55;
-      }
-      if (g.trail > 0.045) {
-        g.trail = 0;
-        effects.smoke(g.mesh.position.x, g.mesh.position.y, g.mesh.position.z, 0.18);
-      }
-      if (g.life <= 0) grenadeBoom(g);
-    }
-  };
-
-  const resetRound = () => {
-    const w = state.weapon;
-    w.reloading = 0;
-    w.cooldown = 0;
-    w.spread = 0;
-    reloadDip = 0;
-    for (const id of Object.keys(WEAPONS)) {
-      w.ammo[id].mag = WEAPONS[id].mag;
-      w.ammo[id].reserve = WEAPONS[id].reserve;
-    }
-    w.current = w.owned[w.primary] ? w.primary : 'pistol';
-    state.player.grenadeSelect = null;
-    hideModels();
-    models[w.current].visible = true;
-    for (const g of grenades) {
-      g.mesh.visible = false;
-      g.life = 0;
-    }
-  };
-
-  const setAmmo = (id, mag, reserve) => {
-    if (!state.weapon.ammo[id]) return;
-    state.weapon.ammo[id].mag = mag;
-    state.weapon.ammo[id].reserve = reserve;
-  };
-
-  const give = (id) => {
-    if (!WEAPONS[id]) return;
-    state.weapon.owned[id] = true;
-    if (id !== 'pistol') state.weapon.primary = id;
-    state.weapon.ammo[id].mag = WEAPONS[id].mag;
-    state.weapon.ammo[id].reserve = WEAPONS[id].reserve;
-    select(id);
-  };
-
-  resetRound();
-
-  return {
-    update,
-    updateGrenades,
-    resetRound,
-    select,
-    selectGrenade,
-    throwGrenade,
-    startReload,
-    fire,
-    beginFlash,
-    setAmmo,
-    give,
-    currentSpread,
-    viewRoot,
-    get flashTimer() {
-      return flashTimer;
-    },
-  };
+  applyLayout();
+  return { fire, reload, equip, selectGrenade, throwGrenade, update, resetRound, accuracy, group };
 }

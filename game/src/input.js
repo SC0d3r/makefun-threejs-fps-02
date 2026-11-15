@@ -1,111 +1,99 @@
-// Keyboard and mouse are captured here; game logic consumes edges once per
-// fixed step so input feels the same at any render rate.
-export function createInput(canvas) {
-  const keys = new Set();
-  const tapped = new Set();
-  const released = new Set();
-  const mouse = { dx: 0, dy: 0, down: false, clicked: false, wheel: 0 };
-  const listeners = { lock: null, unlock: null };
+// Keyboard, mouse and pointer lock. The simulation only reads edges from
+// pressed() and the accumulated mouse delta, so one browser event cannot leak
+// into several fixed steps.
+export function createInput(state, canvas, onLockLost) {
+  const keys = Object.create(null);
+  const pressed = new Set();
+  let dx = 0;
+  let dy = 0;
   let locked = false;
-  let enabled = true;
+  let mouseDown = false;
+  let firePressed = false;
 
-  const onKeyDown = (event) => {
-    if (!enabled) return;
-    if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Tab', 'ShiftLeft', 'ControlLeft'].includes(event.code)) {
-      event.preventDefault();
-    }
-    if (!keys.has(event.code)) tapped.add(event.code);
-    keys.add(event.code);
-  };
-  const onKeyUp = (event) => {
-    if (keys.delete(event.code)) released.add(event.code);
-  };
-  const onMouseMove = (event) => {
+  const block = new Set(['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyB', 'KeyR', 'KeyG', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'ShiftLeft', 'ControlLeft']);
+
+  function onKeyDown(event) {
+    if (block.has(event.code)) event.preventDefault();
+    if (event.repeat) return;
+    // Closing the buy menu is a user gesture, so ask for pointer lock here
+    // rather than from the fixed step that handles KeyB.
+    if (event.code === 'KeyB' && state.mode === 'buy' && state.buyOpen) lock();
+    keys[event.code] = true;
+    pressed.add(event.code);
+  }
+  function onKeyUp(event) {
+    keys[event.code] = false;
+  }
+  function onBlur() {
+    for (const code of Object.keys(keys)) keys[code] = false;
+    pressed.clear();
+  }
+  function onMouseMove(event) {
     if (!locked) return;
-    mouse.dx += event.movementX;
-    mouse.dy += event.movementY;
-  };
-  const onMouseDown = (event) => {
-    if (!enabled) return;
-    if (event.button === 0) {
-      mouse.down = true;
-      mouse.clicked = true;
+    dx += event.movementX || 0;
+    dy += event.movementY || 0;
+  }
+  function lock() {
+    if (state.shot) return;
+    try {
+      const result = canvas.requestPointerLock();
+      if (result && typeof result.catch === 'function') result.catch(() => {});
+    } catch (error) {
+      // A browser that refuses pointer lock still leaves the game playable by
+      // keyboard; the pause overlay explains the click-to-resume path.
     }
-  };
-  const onMouseUp = (event) => {
-    if (event.button === 0) mouse.down = false;
-  };
-  const onWheel = (event) => {
-    if (locked) mouse.wheel += Math.sign(event.deltaY);
-  };
-  const onLockChange = () => {
+  }
+  function unlock() {
+    if (document.pointerLockElement === canvas) {
+      try { document.exitPointerLock(); } catch (error) { /* already released */ }
+    }
+  }
+  function onLockChange() {
     locked = document.pointerLockElement === canvas;
-    if (locked) listeners.lock?.();
-    else listeners.unlock?.();
-  };
+    // The buy menu is a pointer UI: losing lock there is expected, not a pause.
+    const playable = state.mode === 'live' || state.mode === 'planted';
+    if (!locked && state.started && !state.paused && !state.shot && playable) {
+      state.paused = true;
+      onLockLost();
+    }
+  }
+  function onMouseDown(event) {
+    if (event.button !== 0) return;
+    if (!locked) {
+      // Any open overlay owns the pointer: cards and buttons must stay clickable.
+      if (state.overlay) return;
+      lock();
+      return;
+    }
+    mouseDown = true;
+    firePressed = true;
+  }
+  function onMouseUp(event) {
+    if (event.button === 0) mouseDown = false;
+  }
 
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('blur', onBlur);
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mousedown', onMouseDown);
   window.addEventListener('mouseup', onMouseUp);
-  window.addEventListener('wheel', onWheel, { passive: true });
-  window.addEventListener('blur', () => {
-    keys.clear();
-    mouse.down = false;
-  });
   document.addEventListener('pointerlockchange', onLockChange);
-  document.addEventListener('contextmenu', (event) => event.preventDefault());
-
-  const requestLock = () => {
-    if (!locked) canvas.requestPointerLock?.();
-  };
-  const releaseLock = () => {
-    if (document.pointerLockElement) document.exitPointerLock();
-  };
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
   return {
     keys,
-    mouse,
-    get locked() {
-      return locked;
-    },
-    setEnabled(value) {
-      enabled = value;
-      if (!value) {
-        keys.clear();
-        mouse.down = false;
-      }
-    },
-    onLock(handler) {
-      listeners.lock = handler;
-    },
-    onUnlock(handler) {
-      listeners.unlock = handler;
-    },
-    requestLock,
-    releaseLock,
-    isDown(code) {
-      return keys.has(code);
-    },
-    pressed(code) {
-      return tapped.has(code);
-    },
-    released(code) {
-      return released.has(code);
-    },
-    consumeClick() {
-      const hit = mouse.clicked;
-      mouse.clicked = false;
-      return hit;
-    },
-    endStep() {
-      tapped.clear();
-      released.clear();
-      mouse.clicked = false;
-      mouse.dx = 0;
-      mouse.dy = 0;
-      mouse.wheel = 0;
-    },
+    pressed,
+    lock,
+    unlock,
+    get locked() { return locked; },
+    get mouseDown() { return mouseDown; },
+    get firePressed() { return firePressed; },
+    get mouseX() { return dx; },
+    get mouseY() { return dy; },
+    consumeMouse() { dx = 0; dy = 0; },
+    flushMouse() { dx = 0; dy = 0; firePressed = false; },
+    endStep() { pressed.clear(); firePressed = false; },
+    onGesture() { if (!state.shot) lock(); },
   };
 }

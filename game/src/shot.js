@@ -1,191 +1,184 @@
-// Deterministic screenshot staging. A fixed settle pass runs first, then every
-// visible value is written directly so two frames match for a given seed.
-import * as THREE from 'three';
-import { ROUNDS } from './config.js';
+// Deterministic screenshot scenes. Each entry calls the same spawner, round,
+// buy, plant and weapon functions as live play; staging only writes player
+// pose, score inputs and a freeze flag. Nothing is drawn as a fake overlay.
+import { MAP, PLAYER } from './config.js';
+import { clamp } from './util.js';
 
-const muzzle = new THREE.Vector3();
+export function readShot() {
+  const value = new URLSearchParams(window.location.search).get('shot');
+  return value === 'cover' || value === 'firefight' || value === 'plant' || value === 'buy' ? value : null;
+}
 
-export function createShot(state, scene, camera, player, weapon, bots, rounds, effects, hud, stepFixed) {
-  const placeBot = (bot, x, z, yaw, visible = true) => {
-    bot.dead = false;
-    bot.health = 100;
-    bot.blind = 0;
-    bot.defusing = false;
-    bot.x = x;
-    bot.z = z;
-    bot.yaw = yaw;
-    bot.group.visible = visible;
-    bot.group.position.set(x, 0, z);
-    bot.group.rotation.set(0, yaw, 0);
-    bot.legs[0].rotation.x = 0.18;
-    bot.legs[1].rotation.x = -0.18;
-    bot.arms[0].rotation.x = -0.2;
-    bot.arms[1].rotation.x = 0.15;
-    bot.flash.material.opacity = 0;
-    bot.drop.visible = false;
-  };
+export function createShot(state, deps) {
+  const { player, weapon, bots, rounds, hud } = deps;
 
-  const common = () => {
-    state.mode = 'playing';
-    state.paused = false;
-    state.shotMode = true;
-    state.shotFrozen = false;
-    state.flags.startOpen = false;
-    state.flags.buyOpen = false;
-    state.flags.roundEnd = false;
-    state.flags.matchEnd = false;
-    state.flags.defused = false;
-    state.player.alive = true;
-    state.player.deadT = 0;
-    state.player.vel.x = 0;
-    state.player.vel.y = 0;
-    state.player.vel.z = 0;
-    state.round.score = [2, 1];
-    state.round.number = 4;
-    state.weapon.owned.rifle = true;
-    state.weapon.primary = 'rifle';
-    state.weapon.reloading = 0;
-    state.weapon.cooldown = 0;
-    state.player.grenadeSelect = null;
-    state.player.grenades.frag = 1;
-    state.player.grenades.flash = 1;
+  function eye() { return state.player.crouch ? PLAYER.eyeCrouch : PLAYER.eyeStand; }
+
+  function place(x, y, z) {
+    state.player.x = x;
+    state.player.y = y;
+    state.player.z = z;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.vz = 0;
+    state.player.speed = 0;
+    state.player.onGround = true;
+  }
+
+  function lookAt(x, y, z) {
+    const dx = x - state.player.x;
+    const dy = y - (state.player.y + eye());
+    const dz = z - state.player.z;
+    state.yaw = Math.atan2(-dx, -dz);
+    state.pitch = Math.asin(clamp(dy / (Math.hypot(dx, dy, dz) || 1), -1, 1));
+    state.recoilPitch = 0;
+    state.recoilYaw = 0;
+  }
+
+  function facePlayer(bot) {
+    const yaw = Math.atan2(state.player.x - bot.x, state.player.z - bot.z);
+    return yaw;
+  }
+
+  function liveBase(scoreYou, scoreRust, round, money) {
+    rounds.startBuyPhase();
+    rounds.startLive();
+    state.scoreYou = scoreYou;
+    state.scoreRust = scoreRust;
+    state.round = round;
+    state.money = money;
+    state.primary = 'rifle';
+    weapon.equip('rifle');
+    state.switchTimer = 0;
+    state.shotTimer = 0;
+    state.reload = 0;
     state.feed.length = 0;
-    state.hitMarker = 0;
-    state.damageFlash = 0;
-    state.player.flash = 0;
-    state.player.shake = 0;
-    weapon.select('rifle');
-    rounds.hideBomb();
-    effects.defuse(0, 0, 0, false);
-    document.body.classList.add('shot');
-  };
+    state.feedVersion += 1;
+    state.promptTime = 0;
+    state.buyOpen = false;
+    hud.setOverlay(null);
+  }
 
-  const modeCover = () => {
-    player.setPose(-22.5, 0, -3.5, -Math.PI / 4, -0.043, 0);
-    state.player.eye = 1.7;
-    state.player.health = 87;
-    state.player.armor = 50;
-    state.player.money = 3250;
-    state.player.alive = true;
-    state.round.phase = 'planted';
-    state.round.timer = 37;
-    state.round.fuse = 37;
-    state.round.plantSite = 'A';
-    state.round.plantProgress = 1;
-    state.round.defuseProgress = 0;
-    state.flags.defused = false;
-    state.prompt = 'HOLD THE SITE';
-    state.crosshairGap = 0.008;
-    weapon.setAmmo('rifle', 24, 90);
-    rounds.stageBomb(-16, -10, 'A');
-    state.round.beep = 0.8;
-    const ward = bots.bots[0];
-    const cinder = bots.bots[1];
-    const roamer = bots.bots[2];
-    placeBot(ward, -18.1, -13.1, Math.atan2(-(-22.5 - -18.1), -(-3.5 - -13.1)));
-    placeBot(cinder, -14.2, -12.4, Math.atan2(-(-22.5 - -14.2), -(-3.5 - -12.4)));
-    roamer.group.visible = false;
-    state.feed.push({ text: 'YOU > RUST.WARDEN [HEADSHOT]', head: true, t: 3.8 });
-  };
+  function cover() {
+    liveBase(2, 1, 3, 3250);
+    place(-22.5, 0.1, 1.0);
+    lookAt(-16, 1.2, -10);
+    state.health = 87;
+    state.armor = 50;
+    state.ammo.rifle.mag = 24;
+    state.ammo.rifle.reserve = 90;
+    state.plant.time = 0;
+    rounds.completePlant('A');
+    state.bomb.fuse = 37;
+    state.feed.length = 0;
+    state.feedVersion += 1;
+    const killed = bots.squad[2];
+    bots.damage(killed, 999, 'head');
+    killed.group.visible = false;
+    killed.drop.visible = false;
+    const warden = bots.squad[0];
+    const sable = bots.squad[1];
+    const wyaw = Math.atan2(state.player.x - (-16.5), state.player.z - (-12.5));
+    const syaw = Math.atan2(state.player.x - (-13.5), state.player.z - (-13));
+    bots.stage(warden, -16.5, -12.5, wyaw, 0.34);
+    bots.stage(sable, -13.5, -13, syaw, -0.3);
+    state.money = 3250;
+    state.kills = 1;
+    state.plants = 1;
+    state.clock = 37;
+  }
 
-  const modeFirefight = () => {
-    player.setPose(0, 2.3, 2, 0, Math.atan2(1.2 - 3.9, 12), 0);
-    state.player.eye = 1.6;
-    state.player.health = 64;
-    state.player.armor = 0;
-    state.player.money = 3650;
-    state.round.phase = 'live';
-    state.round.timer = 72;
-    state.round.fuse = 0;
-    state.crosshairGap = 0.032;
-    state.prompt = 'ENGAGE';
-    weapon.setAmmo('rifle', 19, 90);
-    const bot = bots.bots[0];
-    placeBot(bot, 0, -10, Math.PI);
-    bot.health = 48;
-    bots.bots[1].group.visible = false;
-    bots.bots[2].group.visible = false;
-    state.feed.push({ text: 'YOU > RUST.WARDEN [HEADSHOT]', head: true, t: 3.8 });
-    state.hitMarker = 0.18;
-    weapon.beginFlash(0.1);
-    const p = state.player;
-    muzzle.set(p.pos.x + 0.18, p.pos.y + p.eye - 0.14, p.pos.z - 0.42);
-    effects.tracer(muzzle.x, muzzle.y, muzzle.z, 0.02, 1.22, -10, 0xffd8a2);
-    effects.tracer(-0.02, 3.55, 1.1, 0.01, 1.05, -10, 0xfff0cc);
-    effects.impact(0.02, 1.22, -9.95, 0, 0.2, 1);
-    scene.updateMatrixWorld(true);
-  };
-
-  const modePlant = () => {
-    player.setPose(-17.5, 0, -7.5, -0.541, -0.361, 1);
-    state.player.eye = 1.25;
-    state.player.health = 92;
-    state.player.armor = 25;
-    state.player.money = 3450;
-    state.round.phase = 'live';
-    state.round.timer = 68;
-    state.round.fuse = 0;
-    state.round.plantSite = 'A';
-    state.round.plantProgress = 0.64;
-    state.round.defusing = false;
-    state.crosshairGap = 0.01;
-    state.prompt = 'PLANTING 64%';
-    weapon.setAmmo('rifle', 24, 90);
-    rounds.stageBomb(-16, -10, 'A');
-    state.bomb.planted = false;
-    const bot = bots.bots[0];
-    placeBot(bot, -16, -16.4, Math.PI);
-    bot.health = 100;
-    bots.bots[1].group.visible = false;
-    bots.bots[2].group.visible = false;
-  };
-
-  const modeBuy = () => {
-    player.setPose(0, 0, 20, 0, -0.015, 0);
-    state.player.eye = 1.6;
-    state.player.health = 100;
-    state.player.armor = 0;
-    state.player.money = 4150;
-    state.round.phase = 'buy';
-    state.round.timer = 9;
-    state.round.fuse = 0;
-    state.flags.buyOpen = true;
-    state.crosshairGap = 0.008;
-    state.prompt = 'SELECT LOADOUT';
-    weapon.setAmmo('rifle', 24, 90);
-    for (const bot of bots.bots) bot.group.visible = false;
-    const rifleCard = document.querySelector('[data-item="rifle"]');
-    if (rifleCard) {
-      rifleCard.classList.add('hover');
-      hud.updateBuyReady();
+  function firefight() {
+    liveBase(2, 1, 5, 3600);
+    place(0, 2.3, 2);
+    const target = bots.squad[0];
+    bots.stage(target, -5.4, -8.5, 0);
+    bots.squad[1].group.visible = false;
+    const killed = bots.squad[2];
+    bots.damage(killed, 999, 'head');
+    killed.group.visible = false;
+    killed.drop.visible = false;
+    bots.stage(target, -5.4, -8.5, facePlayer(target), 0.2);
+    target.alive = true;
+    target.health = 100;
+    target.group.visible = true;
+    lookAt(target.x, 1.62, target.z);
+    state.health = 64;
+    state.armor = 0;
+    state.ammo.rifle.mag = 20;
+    state.ammo.rifle.reserve = 90;
+    state.clock = 72;
+    state.shots = 0;
+    state.hits = 0;
+    state.consecutive = 0;
+    if (weapon.fire()) {
+      state.shotTimer = 0;
+      state.consecutive = 0;
+      state.spread = 0.02;
     }
-  };
+    state.money = 3600;
+    state.kills = 1;
+  }
 
-  const stage = {
-    cover: modeCover,
-    firefight: modeFirefight,
-    plant: modePlant,
-    buy: modeBuy,
-  };
+  function plant() {
+    liveBase(2, 1, 4, 2900);
+    state.player.crouch = true;
+    place(-17.5, 0, -7.5);
+    lookAt(-16, 0.15, -10);
+    state.health = 92;
+    state.armor = 0;
+    state.ammo.rifle.mag = 30;
+    state.ammo.rifle.reserve = 90;
+    state.clock = 68;
+    rounds.stageCharge('A', 0.64);
+    const warden = bots.squad[0];
+    bots.stage(warden, -15, -15.5, Math.atan2(state.player.x + 15, state.player.z + 15.5), 0.12);
+    bots.squad[1].group.visible = false;
+    bots.squad[2].group.visible = false;
+    state.feed.length = 0;
+    state.feedVersion += 1;
+  }
 
-  return {
-    enter(name) {
-      state.round.phase = 'live';
-      state.round.timer = ROUNDS.live;
-      state.round.fuse = 0;
-      state.flags.buyOpen = false;
-      state.player.health = 100;
-      state.player.armor = 0;
-      state.player.money = 1900;
-      player.reset();
-      bots.reset();
-      weapon.resetRound();
-      for (let i = 0; i < 90; i += 1) stepFixed(1 / 60);
-      common();
-      stage[name]();
-      hud.update(0);
-      camera.updateMatrixWorld(true);
-      scene.updateMatrixWorld(true);
-    },
-  };
+  function buy() {
+    rounds.startBuyPhase();
+    state.buyClock = 9;
+    state.money = 4150;
+    state.round = 4;
+    state.scoreYou = 2;
+    state.scoreRust = 1;
+    state.primary = null;
+    place(MAP.playerSpawn.x, 0, MAP.playerSpawn.z);
+    state.yaw = 0;
+    state.pitch = 0;
+    state.recoilPitch = 0;
+    state.recoilYaw = 0;
+    hud.setOverlay('buy');
+    hud.setHover(0);
+    state.feed.length = 0;
+    state.feedVersion += 1;
+  }
+
+  function stageShot(mode) {
+    state.shot = mode;
+    state.shotFrozen = false;
+    state.started = true;
+    state.paused = false;
+    window.__shotReady = false;
+    if (mode === 'cover') cover();
+    else if (mode === 'firefight') firefight();
+    else if (mode === 'plant') plant();
+    else if (mode === 'buy') buy();
+    // One zero-time weapon tick exposes the muzzle flash and viewmodel pose
+    // that the staged shot would show on its first simulated frame.
+    weapon.update(0);
+    state.promptText = '';
+    state.promptTime = 0;
+    hud.setPrompt('', 0);
+    hud.update(0);
+    player.syncEye();
+    player.applyCamera();
+    state.shotFrozen = true;
+  }
+
+  return { stageShot };
 }

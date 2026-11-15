@@ -1,272 +1,251 @@
-// All transient combat visuals are allocated once and rewritten in place.
+// Transient visuals live in fixed pools created at boot. Spawning only writes
+// positions and lifetimes; update never allocates, so a long firefight does not
+// create browser garbage.
 import * as THREE from 'three';
-import { COLORS } from './config.js';
+import { PALETTE } from './config.js';
+import { mulberry32 } from './util.js';
 
-function puffTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 32);
-  g.addColorStop(0, 'rgba(255,238,205,0.9)');
-  g.addColorStop(0.35, 'rgba(190,180,165,0.4)');
-  g.addColorStop(1, 'rgba(120,120,120,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(canvas);
-}
+export function createEffects(scene) {
+  const rng = mulberry32(31);
+  const smokeTexture = radialTexture(64, [
+    [0, 'rgba(200,214,224,.55)'], [0.45, 'rgba(140,156,168,.22)'], [1, 'rgba(80,94,106,0)'],
+  ]);
+  const flashTexture = makeFlashTexture();
+  const tracers = [];
+  const shells = [];
+  const smokes = [];
+  const blasts = [];
+  let tracerIndex = 0;
+  let shellIndex = 0;
+  let smokeIndex = 0;
+  let blastIndex = 0;
 
-export function createEffects(state, scene) {
-  const hidden = -999;
-  const tracerCount = 64;
-  const tracerPos = new Float32Array(tracerCount * 6);
-  const tracerLife = new Float32Array(tracerCount);
-  const tracerCursor = { value: 0 };
-  const tracerGeo = new THREE.BufferGeometry();
-  const tracerAttr = new THREE.BufferAttribute(tracerPos, 3);
-  tracerAttr.setUsage(THREE.DynamicDrawUsage);
-  tracerGeo.setAttribute('position', tracerAttr);
-  const tracers = new THREE.LineSegments(
-    tracerGeo,
-    new THREE.LineBasicMaterial({ color: 0xffd8a2, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }),
-  );
-  tracers.frustumCulled = false;
-  scene.add(tracers);
+  for (let i = 0; i < 24; i++) {
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(6);
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.LineBasicMaterial({ color: PALETTE.sodium, transparent: true, opacity: 0, depthWrite: false });
+    const line = new THREE.Line(geometry, material);
+    line.frustumCulled = false;
+    line.visible = false;
+    scene.add(line);
+    tracers.push({ line, life: 0 });
+  }
 
-  const sparkCount = 96;
-  const sparkPos = new Float32Array(sparkCount * 3);
-  const sparkVel = new Float32Array(sparkCount * 3);
-  const sparkLife = new Float32Array(sparkCount);
-  const sparkCursor = { value: 0 };
-  const sparkGeo = new THREE.BufferGeometry();
+  const SPARKS = 120;
+  const sparkPos = new Float32Array(SPARKS * 3);
+  const sparkVel = new Float32Array(SPARKS * 3);
+  const sparkLife = new Float32Array(SPARKS);
+  for (let i = 0; i < SPARKS; i++) sparkPos[i * 3 + 1] = -100;
+  const sparkGeometry = new THREE.BufferGeometry();
   const sparkAttr = new THREE.BufferAttribute(sparkPos, 3);
   sparkAttr.setUsage(THREE.DynamicDrawUsage);
-  sparkGeo.setAttribute('position', sparkAttr);
-  const sparks = new THREE.Points(
-    sparkGeo,
-    new THREE.PointsMaterial({ color: 0xffc277, size: 0.075, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }),
-  );
+  sparkGeometry.setAttribute('position', sparkAttr);
+  const sparkMaterial = new THREE.PointsMaterial({
+    color: PALETTE.sodium, size: 0.07, transparent: true, opacity: 0.95,
+    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+  });
+  const sparks = new THREE.Points(sparkGeometry, sparkMaterial);
   sparks.frustumCulled = false;
   scene.add(sparks);
+  let sparkIndex = 0;
 
-  const shellCount = 32;
-  const shells = [];
-  const shellGeo = new THREE.BoxGeometry(0.035, 0.035, 0.075);
-  const shellMat = new THREE.MeshStandardMaterial({ color: 0xc8a05c, metalness: 0.8, roughness: 0.3 });
-  for (let i = 0; i < shellCount; i += 1) {
-    const mesh = new THREE.Mesh(shellGeo, shellMat);
+  for (let i = 0; i < 16; i++) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.07), new THREE.MeshStandardMaterial({ color: 0xc9a267, metalness: 0.8, roughness: 0.3 }));
     mesh.visible = false;
-    mesh.castShadow = false;
+    mesh.frustumCulled = false;
     scene.add(mesh);
-    shells.push({ mesh, vel: new THREE.Vector3(), life: 0, spin: new THREE.Vector3() });
+    shells.push({ mesh, life: 0, vx: 0, vy: 0, vz: 0 });
   }
-  let shellCursor = 0;
 
-  const smokeCount = 16;
-  const smokeTex = puffTexture();
-  const puffs = [];
-  for (let i = 0; i < smokeCount; i += 1) {
-    const material = new THREE.SpriteMaterial({ map: smokeTex, color: 0xb7aa96, transparent: true, opacity: 0, depthWrite: false });
+  for (let i = 0; i < 14; i++) {
+    const material = new THREE.SpriteMaterial({ map: smokeTexture, transparent: true, opacity: 0, depthWrite: false });
     const sprite = new THREE.Sprite(material);
     sprite.visible = false;
     scene.add(sprite);
-    puffs.push({ sprite, life: 0, max: 1, rise: 0 });
+    smokes.push({ sprite, life: 0, max: 1, rise: 0 });
   }
-  let puffCursor = 0;
 
-  const boomCount = 8;
-  const boomTex = puffTexture();
-  const booms = [];
-  for (let i = 0; i < boomCount; i += 1) {
-    const material = new THREE.SpriteMaterial({ map: boomTex, color: 0xffc06a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+  for (let i = 0; i < 6; i++) {
+    const material = new THREE.SpriteMaterial({ map: flashTexture, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
     const sprite = new THREE.Sprite(material);
     sprite.visible = false;
     scene.add(sprite);
-    booms.push({ sprite, life: 0, max: 0.5, size: 1 });
+    blasts.push({ sprite, life: 0, max: 0.45 });
   }
-  let boomCursor = 0;
+  const blastLight = new THREE.PointLight(PALETTE.sodium, 0, 14, 2);
+  blastLight.position.set(0, 0, 0);
+  scene.add(blastLight);
+  let blastLightLife = 0;
 
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.7, 0.035, 6, 40),
-    new THREE.MeshBasicMaterial({ color: COLORS.cyan, transparent: true, opacity: 0.9 }),
-  );
-  ring.rotation.x = Math.PI / 2;
-  ring.visible = false;
-  scene.add(ring);
+  function tracer(fromX, fromY, fromZ, dx, dy, dz, color = PALETTE.sodium) {
+    const item = tracers[tracerIndex];
+    tracerIndex = (tracerIndex + 1) % tracers.length;
+    const attr = item.line.geometry.attributes.position;
+    // A short segment at the muzzle reads as a tracer without painting a
+    // screen-long streak over the frame.
+    attr.setXYZ(0, fromX + dx * 0.25, fromY + dy * 0.25, fromZ + dz * 0.25);
+    attr.setXYZ(1, fromX + dx * 1.8, fromY + dy * 1.8, fromZ + dz * 1.8);
+    attr.needsUpdate = true;
+    item.line.material.color.setHex(color);
+    item.line.material.opacity = 0.85;
+    item.line.visible = true;
+    item.life = 0.075;
+  }
 
-  const flashLight = new THREE.PointLight(0xffb15c, 0, 14, 2);
-  scene.add(flashLight);
-  let flashLife = 0;
-
-  const tracer = (ax, ay, az, bx, by, bz, color = 0xffd8a2) => {
-    const i = tracerCursor.value;
-    tracerCursor.value = (i + 1) % tracerCount;
-    tracerPos[i * 6] = ax;
-    tracerPos[i * 6 + 1] = ay;
-    tracerPos[i * 6 + 2] = az;
-    tracerPos[i * 6 + 3] = bx;
-    tracerPos[i * 6 + 4] = by;
-    tracerPos[i * 6 + 5] = bz;
-    tracerLife[i] = 0.07;
-    tracers.material.color.setHex(color);
-  };
-
-  const spark = (x, y, z, nx, ny, nz, speed) => {
-    const i = sparkCursor.value;
-    sparkCursor.value = (i + 1) % sparkCount;
-    sparkPos[i * 3] = x;
-    sparkPos[i * 3 + 1] = y;
-    sparkPos[i * 3 + 2] = z;
-    sparkVel[i * 3] = nx * speed + (state.rng() - 0.5) * 2.6;
-    sparkVel[i * 3 + 1] = ny * speed + state.rng() * 2.4;
-    sparkVel[i * 3 + 2] = nz * speed + (state.rng() - 0.5) * 2.6;
-    sparkLife[i] = 0.2 + state.rng() * 0.24;
-  };
-
-  const impact = (x, y, z, nx = 0, ny = 1, nz = 0) => {
-    for (let i = 0; i < 6; i += 1) spark(x, y, z, nx, ny, nz, 2.2 + state.rng() * 2.8);
-    smoke(x + nx * 0.12, y + ny * 0.12, z + nz * 0.12, 0.55);
-  };
-
-  const smoke = (x, y, z, size = 0.8) => {
-    const p = puffs[puffCursor];
-    puffCursor = (puffCursor + 1) % smokeCount;
-    p.sprite.visible = true;
-    p.sprite.position.set(x, y, z);
-    p.sprite.scale.setScalar(size);
-    p.life = 0.7;
-    p.max = 0.7;
-    p.rise = 0.25;
-    p.sprite.material.opacity = 0.34;
-  };
-
-  const explosion = (x, y, z, size = 1) => {
-    const b = booms[boomCursor];
-    boomCursor = (boomCursor + 1) % boomCount;
-    b.sprite.visible = true;
-    b.sprite.position.set(x, y + 0.2, z);
-    b.sprite.scale.setScalar(size * 1.3);
-    b.life = 0.5;
-    b.max = 0.5;
-    b.size = size;
-    b.sprite.material.opacity = 0.95;
-    for (let i = 0; i < 14; i += 1) spark(x, y + 0.2, z, 0, 1, 0, 3.6 + state.rng() * 4);
-    for (let i = 0; i < 5; i += 1) smoke(x + (state.rng() - 0.5) * size * 2, y + 0.4 + state.rng() * 1.2, z + (state.rng() - 0.5) * size * 2, 1.4 + state.rng());
-    flashLight.position.set(x, y + 0.8, z);
-    flashLight.intensity = 160;
-    flashLife = 0.18;
-  };
-
-  const shell = (x, y, z, vx, vy, vz) => {
-    const s = shells[shellCursor];
-    shellCursor = (shellCursor + 1) % shellCount;
-    s.mesh.visible = true;
-    s.mesh.position.set(x, y, z);
-    s.vel.set(vx, vy, vz);
-    s.life = 1.4;
-    s.spin.set(state.rng() * 8, state.rng() * 8, state.rng() * 8);
-  };
-
-  const defuse = (x, z, progress, visible) => {
-    ring.visible = visible;
-    if (!visible) return;
-    ring.position.set(x, 1.12, z);
-    ring.scale.setScalar(0.45 + progress * 0.75);
-    ring.rotation.z += 0.02;
-  };
-
-  const update = (dt) => {
-    let active = false;
-    for (let i = 0; i < tracerCount; i += 1) {
-      if (tracerLife[i] <= 0) continue;
-      tracerLife[i] -= dt;
-      if (tracerLife[i] <= 0) {
-        tracerPos[i * 6] = hidden;
-        tracerPos[i * 6 + 1] = hidden;
-        tracerPos[i * 6 + 2] = hidden;
-        tracerPos[i * 6 + 3] = hidden;
-        tracerPos[i * 6 + 4] = hidden;
-        tracerPos[i * 6 + 5] = hidden;
-      } else active = true;
+  function impact(x, y, z, dx, dy, dz) {
+    for (let i = 0; i < 6; i++) {
+      const k = sparkIndex;
+      sparkIndex = (sparkIndex + 1) % SPARKS;
+      sparkPos[k * 3] = x;
+      sparkPos[k * 3 + 1] = y;
+      sparkPos[k * 3 + 2] = z;
+      const spread = 2.2;
+      sparkVel[k * 3] = -dx * 1.3 + (rng() - 0.5) * spread;
+      sparkVel[k * 3 + 1] = -dy * 1.3 + rng() * 1.7;
+      sparkVel[k * 3 + 2] = -dz * 1.3 + (rng() - 0.5) * spread;
+      sparkLife[k] = 0.22 + rng() * 0.2;
     }
-    if (active) tracerAttr.needsUpdate = true;
+    sparkAttr.needsUpdate = true;
+    if (rng() < 0.6) smoke(x, y, z, 0.6);
+  }
 
-    active = false;
-    for (let i = 0; i < sparkCount; i += 1) {
+  function smoke(x, y, z, scale = 1) {
+    const item = smokes[smokeIndex];
+    smokeIndex = (smokeIndex + 1) % smokes.length;
+    item.sprite.position.set(x, y, z);
+    item.sprite.scale.setScalar(0.35 * scale);
+    item.sprite.material.opacity = 0.42;
+    item.sprite.visible = true;
+    item.life = 0.5 + rng() * 0.35;
+    item.max = item.life;
+    item.rise = 0.4 + rng() * 0.5;
+  }
+
+  function shell(x, y, z, vx, vy, vz) {
+    const item = shells[shellIndex];
+    shellIndex = (shellIndex + 1) % shells.length;
+    item.mesh.position.set(x, y, z);
+    item.mesh.visible = true;
+    item.life = 0.9;
+    item.vx = vx;
+    item.vy = vy;
+    item.vz = vz;
+    item.mesh.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+  }
+
+  function explosion(x, y, z) {
+    const item = blasts[blastIndex];
+    blastIndex = (blastIndex + 1) % blasts.length;
+    item.sprite.position.set(x, y + 0.5, z);
+    item.sprite.scale.setScalar(1.2);
+    item.sprite.material.opacity = 1;
+    item.sprite.visible = true;
+    item.life = item.max;
+    blastLight.position.set(x, y + 1.2, z);
+    blastLight.intensity = 70;
+    blastLightLife = 0.32;
+    for (let i = 0; i < 10; i++) smoke(x + (rng() - 0.5) * 1.5, y + rng(), z + (rng() - 0.5) * 1.5, 1.8);
+  }
+
+  function update(dt) {
+    for (const item of tracers) {
+      if (item.life <= 0) continue;
+      item.life -= dt;
+      item.line.material.opacity = Math.max(0, item.life / 0.075) * 0.85;
+      if (item.life <= 0) item.line.visible = false;
+    }
+    for (let i = 0; i < SPARKS; i++) {
       if (sparkLife[i] <= 0) continue;
       sparkLife[i] -= dt;
-      if (sparkLife[i] <= 0) {
-        sparkPos[i * 3 + 1] = hidden;
-        continue;
-      }
-      active = true;
-      sparkVel[i * 3 + 1] -= 14 * dt;
+      sparkVel[i * 3 + 1] -= 12 * dt;
       sparkPos[i * 3] += sparkVel[i * 3] * dt;
       sparkPos[i * 3 + 1] += sparkVel[i * 3 + 1] * dt;
       sparkPos[i * 3 + 2] += sparkVel[i * 3 + 2] * dt;
+      if (sparkLife[i] <= 0) sparkPos[i * 3 + 1] = -100;
     }
-    if (active) sparkAttr.needsUpdate = true;
-
-    for (const s of shells) {
-      if (!s.mesh.visible) continue;
-      s.life -= dt;
-      if (s.life <= 0) {
-        s.mesh.visible = false;
-        continue;
+    sparkAttr.needsUpdate = true;
+    for (const item of shells) {
+      if (item.life <= 0) continue;
+      item.life -= dt;
+      item.vy -= 9 * dt;
+      item.mesh.position.x += item.vx * dt;
+      item.mesh.position.y += item.vy * dt;
+      item.mesh.position.z += item.vz * dt;
+      if (item.mesh.position.y < 0.03) {
+        item.mesh.position.y = 0.03;
+        item.vy *= -0.35;
+        item.vx *= 0.6;
+        item.vz *= 0.6;
       }
-      s.vel.y -= 15 * dt;
-      s.mesh.position.x += s.vel.x * dt;
-      s.mesh.position.y += s.vel.y * dt;
-      s.mesh.position.z += s.vel.z * dt;
-      if (s.mesh.position.y < 0.03) {
-        s.mesh.position.y = 0.03;
-        s.vel.y *= -0.35;
-        s.vel.x *= 0.6;
-        s.vel.z *= 0.6;
-      }
-      s.mesh.rotation.x += s.spin.x * dt;
-      s.mesh.rotation.z += s.spin.z * dt;
+      item.mesh.rotation.x += dt * 8;
+      item.mesh.rotation.z += dt * 5;
+      if (item.life <= 0) item.mesh.visible = false;
     }
-
-    for (const p of puffs) {
-      if (!p.sprite.visible) continue;
-      p.life -= dt;
-      if (p.life <= 0) {
-        p.sprite.visible = false;
-        continue;
-      }
-      const t = p.life / p.max;
-      p.sprite.position.y += p.rise * dt;
-      p.sprite.scale.addScalar(dt * 0.9);
-      p.sprite.material.opacity = 0.34 * t;
+    for (const item of smokes) {
+      if (item.life <= 0) continue;
+      item.life -= dt;
+      item.sprite.position.y += item.rise * dt;
+      item.sprite.scale.multiplyScalar(1 + dt * 0.7);
+      item.sprite.material.opacity = Math.max(0, item.life / item.max) * 0.42;
+      if (item.life <= 0) item.sprite.visible = false;
     }
-
-    for (const b of booms) {
-      if (!b.sprite.visible) continue;
-      b.life -= dt;
-      if (b.life <= 0) {
-        b.sprite.visible = false;
-        continue;
-      }
-      const t = b.life / b.max;
-      b.sprite.scale.setScalar(b.size * (1.3 + (1 - t) * 2.4));
-      b.sprite.material.opacity = 0.95 * t * t;
+    for (const item of blasts) {
+      if (item.life <= 0) continue;
+      item.life -= dt;
+      const k = Math.max(0, item.life / item.max);
+      item.sprite.material.opacity = k;
+      item.sprite.scale.setScalar(1.2 + (1 - k) * 2.6);
+      if (item.life <= 0) item.sprite.visible = false;
     }
-
-    if (flashLife > 0) {
-      flashLife -= dt;
-      flashLight.intensity = Math.max(0, flashLife / 0.18) * 160;
+    if (blastLightLife > 0) {
+      blastLightLife -= dt;
+      blastLight.intensity = Math.max(0, blastLightLife / 0.32) * 70;
     }
-  };
+  }
 
-  return {
-    tracer,
-    impact,
-    smoke,
-    explosion,
-    shell,
-    defuse,
-    update,
-    ring,
-  };
+  function reset() {
+    for (const item of tracers) { item.life = 0; item.line.visible = false; }
+    for (const item of shells) { item.life = 0; item.mesh.visible = false; }
+    for (const item of smokes) { item.life = 0; item.sprite.visible = false; }
+    for (const item of blasts) { item.life = 0; item.sprite.visible = false; }
+    for (let i = 0; i < SPARKS; i++) { sparkLife[i] = 0; sparkPos[i * 3 + 1] = -100; }
+    sparkAttr.needsUpdate = true;
+    blastLight.intensity = 0;
+    blastLightLife = 0;
+  }
+
+  return { tracer, impact, smoke, shell, explosion, update, reset };
+}
+
+function radialTexture(size, stops) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const c = canvas.getContext('2d');
+  const gradient = c.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  for (const [at, color] of stops) gradient.addColorStop(at, color);
+  c.fillStyle = gradient;
+  c.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+export function makeFlashTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const c = canvas.getContext('2d');
+  const gradient = c.createRadialGradient(32, 32, 0, 32, 32, 31);
+  gradient.addColorStop(0, 'rgba(255,244,210,1)');
+  gradient.addColorStop(0.35, 'rgba(255,177,92,.9)');
+  gradient.addColorStop(0.7, 'rgba(229,72,60,.5)');
+  gradient.addColorStop(1, 'rgba(229,72,60,0)');
+  c.fillStyle = gradient;
+  c.fillRect(0, 0, 64, 64);
+  c.fillStyle = 'rgba(255,220,160,.8)';
+  c.fillRect(30, 2, 4, 60);
+  c.fillRect(2, 30, 60, 4);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }

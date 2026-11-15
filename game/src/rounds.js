@@ -1,371 +1,344 @@
-// Round state machine, the charge, economy and the buy list.
+// Round flow, economy and the bomb. startBuyPhase() is the only way into a buy
+// phase, completePlant() is the only way a charge becomes armed, and both the
+// live game and shot staging call those same functions.
 import * as THREE from 'three';
-import { ECONOMY, GRENADES, ROUNDS, SITES, WEAPONS } from './config.js';
-import { clamp } from './util.js';
+import { ECONOMY, MAP, PALETTE, ROUND, WEAPONS } from './config.js';
+import { clamp, lerp } from './util.js';
 
-function buildBomb(scene) {
-  const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a333b, roughness: 0.55, metalness: 0.5 });
-  const hazardMat = new THREE.MeshStandardMaterial({ map: null, color: 0xffb15c, roughness: 0.5, metalness: 0.2 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.32), bodyMat);
-  body.position.y = 0.09;
-  group.add(body);
-  const band = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.05, 0.34), hazardMat);
-  band.position.y = 0.1;
-  group.add(band);
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 0.16), new THREE.MeshStandardMaterial({ color: 0x11171d }));
-  plate.position.set(0, 0.185, 0);
-  group.add(plate);
-  const ledMat = new THREE.MeshBasicMaterial({ color: 0xff2a1e });
-  const led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), ledMat);
-  led.position.set(0.11, 0.215, 0.02);
-  group.add(led);
-  const beep = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2a1e, transparent: true, opacity: 0.3 }));
-  beep.position.copy(led.position);
-  group.add(beep);
-  const wireMat = new THREE.MeshStandardMaterial({ color: 0xb4552d, roughness: 0.8 });
-  for (let i = 0; i < 3; i += 1) {
-    const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.28, 5), wireMat);
-    wire.position.set(-0.14 + i * 0.05, 0.2, -0.06);
-    wire.rotation.z = Math.PI / 2;
-    group.add(wire);
+export function createRounds(state, scene, map, player, bots, weapon, hud, audio, effects, input) {
+  const bomb = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.22), new THREE.MeshStandardMaterial({ color: 0x1b232b, roughness: 0.5, metalness: 0.5 }));
+  body.position.y = 0.08;
+  bomb.add(body);
+  const ledMaterial = new THREE.MeshStandardMaterial({ color: PALETTE.danger, emissive: PALETTE.danger, emissiveIntensity: 3 });
+  const led = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 0.05), ledMaterial);
+  led.position.set(0.07, 0.18, 0.09);
+  bomb.add(led);
+  const cableMaterial = new THREE.MeshStandardMaterial({ color: PALETTE.sodium, roughness: 0.6 });
+  for (let i = 0; i < 3; i++) {
+    const cable = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.18 + i * 0.05), cableMaterial);
+    cable.position.set(-0.12 + i * 0.04, 0.17, -0.03);
+    cable.rotation.y = 0.2 - i * 0.2;
+    bomb.add(cable);
   }
-  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.38, 5), wireMat);
-  antenna.position.set(-0.16, 0.3, 0.1);
-  antenna.rotation.z = -0.2;
-  group.add(antenna);
-  group.visible = false;
-  scene.add(group);
-  return { group, ledMat, beep };
-}
+  const ringMaterial = new THREE.MeshBasicMaterial({ color: PALETTE.cyan, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.44, 28), ringMaterial);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.26;
+  ring.visible = false;
+  bomb.add(ring);
+  bomb.visible = false;
+  scene.add(bomb);
 
-export function createRounds(state, scene, effects, audio, player, weapon, bots) {
-  const bomb = buildBomb(scene);
+  let lastGear = 100;
+  let lastShots = 0;
+  let beepGap = 1;
 
-  const setPrompt = (text) => {
-    state.prompt = text;
-  };
+  function resetBomb() {
+    state.bomb.active = false;
+    state.bomb.planted = false;
+    state.bomb.fuse = 0;
+    state.bomb.defuse = 0;
+    state.bomb.defusing = false;
+    state.bomb.defuserId = -1;
+    state.bomb.beep = 0;
+    state.bomb.led = 0;
+    state.plant.time = 0;
+    state.plant.active = false;
+    state.plant.site = null;
+    bomb.visible = false;
+    ring.visible = false;
+    ring.scale.setScalar(0.1);
+  }
 
-  const showBomb = (x, z, site) => {
-    state.bomb.planted = true;
+  function showBomb(x, z) {
+    bomb.position.set(x, 0, z);
+    bomb.visible = true;
     state.bomb.x = x;
     state.bomb.z = z;
-    state.bomb.led = 0;
-    bomb.group.visible = true;
-    bomb.group.position.set(x, 0, z);
-    bomb.group.rotation.y = site === 'B' ? 0.7 : -0.4;
-  };
-
-  const hideBomb = () => {
-    state.bomb.planted = false;
-    state.round.plantProgress = 0;
-    state.round.defuseProgress = 0;
-    state.round.defusing = false;
-    state.flags.defused = false;
-    bomb.group.visible = false;
-    effects.defuse(0, 0, 0, false);
-  };
-
-  const nearestSite = () => {
-    let best = null;
-    let bestDist = Infinity;
-    for (const site of SITES) {
-      const dist = Math.hypot(state.player.pos.x - site.x, state.player.pos.z - site.z);
-      if (dist < ROUNDS.plantRange && dist < bestDist) {
-        best = site;
-        bestDist = dist;
-      }
-    }
-    return best;
-  };
-
-  const feed = (text, head = false) => {
-    state.feed.push({ text, head, t: 4 });
-    if (state.feed.length > 3) state.feed.shift();
-  };
-
-  const startBuy = () => {
-    state.round.number += 1;
-    state.round.phase = 'buy';
-    state.round.timer = ROUNDS.buy;
-    state.round.fuse = 0;
-    state.round.result = '';
-    state.round.reason = '';
-    state.round.ended = 0;
-    state.round.plantSite = null;
-    state.round.plantProgress = 0;
-    state.round.defuseProgress = 0;
-    state.round.defusing = false;
-    state.round.moneyDelta = 0;
-    state.flags.buyOpen = true;
-    state.flags.roundEnd = false;
-    state.flags.matchEnd = false;
-    state.flags.defused = false;
-    state.paused = false;
-    state.feed.length = 0;
-    hideBomb();
-    player.reset();
-    weapon.resetRound();
-    bots.reset();
-    state.mode = 'playing';
-    setPrompt('PRESS B TO BUY');
-    if (audio) audio.roundStart();
-  };
-
-  const startMatch = () => {
-    state.mode = 'playing';
-    state.match.result = '';
-    state.round.score = [0, 0];
-    state.round.number = 0;
-    state.stats.kills = 0;
-    state.stats.plants = 0;
-    state.stats.shots = 0;
-    state.stats.hits = 0;
-    state.stats.rounds = 0;
-    state.player.money = ECONOMY.loss;
-    state.weapon.owned = { pistol: true, smg: false, rifle: false, shotgun: false };
-    state.weapon.primary = null;
-    state.flags.startOpen = false;
-    state.flags.matchEnd = false;
-    if (audio) audio.start();
-    startBuy();
-  };
-
-  const restart = () => {
-    state.flags.matchEnd = false;
-    state.flags.roundEnd = false;
-    state.flags.buyOpen = false;
-    startMatch();
-  };
-
-  const closeBuy = () => {
-    if (state.round.phase !== 'buy') return;
-    state.flags.buyOpen = false;
-    state.round.phase = 'live';
-    state.round.timer = ROUNDS.live;
-    setPrompt('CHARGE CARRIED');
-  };
-
-  const toggleBuy = () => {
-    if (state.round.phase !== 'buy') return false;
-    if (state.flags.buyOpen) closeBuy();
-    else state.flags.buyOpen = true;
-    return true;
-  };
-
-  const buy = (item) => {
-    if (state.round.phase !== 'buy') return false;
-    const p = state.player;
-    if (item === 'armor') {
-      if (p.armor > 0 || p.money < ECONOMY.armorPrice) return false;
-      p.money -= ECONOMY.armorPrice;
-      p.armor = 50;
-    } else if (item === 'frag' || item === 'flash') {
-      const def = GRENADES[item];
-      if (p.grenades[item] >= 1 || p.money < def.price) return false;
-      p.money -= def.price;
-      p.grenades[item] += 1;
-    } else if (WEAPONS[item]) {
-      const def = WEAPONS[item];
-      if (state.weapon.owned[item] || p.money < def.price) return false;
-      p.money -= def.price;
-      weapon.give(item);
-    } else {
-      return false;
-    }
-    if (audio) audio.buy();
-    closeBuy();
-    return true;
-  };
-
-  const endRound = (winner, reason) => {
-    if (state.round.phase === 'ended' || state.round.phase === 'matchEnd') return;
-    const won = winner === 'attackers';
-    state.round.phase = 'ended';
-    state.round.ended = ROUNDS.ended;
-    state.round.result = won ? 'VICTORY' : 'DEFEAT';
-    state.round.reason = reason;
-    state.round.moneyDelta = won ? ECONOMY.win : ECONOMY.loss;
-    state.player.money = Math.min(ECONOMY.cap, state.player.money + state.round.moneyDelta);
-    state.round.score[won ? 0 : 1] += 1;
-    state.stats.rounds += 1;
-    state.flags.roundEnd = true;
-    state.flags.buyOpen = false;
-    state.prompt = '';
-    if (audio) {
-      if (won) audio.win();
-      else audio.lose();
-    }
-  };
-
-  const detonate = () => {
-    if (audio) audio.explosion(1.4);
-    effects.explosion(state.bomb.x, 0.6, state.bomb.z, 2.4);
-    player.addShake(0.8);
-    const dist = Math.hypot(player.pos.x - state.bomb.x, player.pos.z - state.bomb.z);
-    if (dist < 9 && player.alive) player.takeDamage(60 * (1 - dist / 9), state.bomb.x, state.bomb.z);
-    endRound('attackers', 'CHARGE DETONATED');
-  };
-
-  const plant = (site) => {
-    const p = state.player;
-    showBomb(p.pos.x, p.pos.z, site.id);
-    state.round.phase = 'planted';
-    state.round.fuse = ROUNDS.fuse;
-    state.round.timer = ROUNDS.fuse;
-    state.round.plantSite = site.id;
-    state.round.plantProgress = 0;
-    state.round.beep = 0.4;
-    state.round.beepGap = 1;
-    p.money = Math.min(ECONOMY.cap, p.money + ECONOMY.plant);
-    state.stats.plants += 1;
-    bots.plantAlert(p.pos.x, p.pos.z);
-    if (audio) audio.plantDone();
-    feed('TIDE > CHARGE PLANTED');
-    setPrompt('CHARGE PLANTED');
-  };
-
-  const update = (dt) => {
-    const r = state.round;
-    const p = state.player;
-    if (state.mode !== 'playing' || state.shotFrozen) return;
-    if (r.phase === 'buy') {
-      r.timer -= dt;
-      if (r.timer <= 0) closeBuy();
-      return;
-    }
-    if (r.phase === 'live') {
-      r.timer -= dt;
-      if (!p.alive) {
-        endRound('defenders', 'TIDE DOWN');
-        return;
-      }
-      if (bots.allDead()) {
-        endRound('attackers', 'RUST ELIMINATED');
-        return;
-      }
-      const site = nearestSite();
-      if (site) {
-        if (!r.plantProgress) setPrompt('HOLD E TO PLANT');
-        if (inputPlant(dt, site)) return;
-      } else {
-        r.plantProgress = Math.max(0, r.plantProgress - dt * 2);
-        if (r.timer > 0) setPrompt('CHARGE CARRIED');
-      }
-      if (r.timer <= 0) endRound('defenders', 'TIME EXPIRED');
-      return;
-    }
-    if (r.phase === 'planted') {
-      r.fuse -= dt;
-      r.timer = Math.max(0, r.fuse);
-      if (!p.alive) {
-        endRound('defenders', 'TIDE DOWN');
-        return;
-      }
-      if (state.flags.defused) {
-        endRound('defenders', 'CHARGE DEFUSED');
-        return;
-      }
-      const anyDefusing = bots.bots.some((bot) => !bot.dead && bot.defusing);
-      r.defusing = anyDefusing;
-      if (!anyDefusing) r.defuseProgress = Math.max(0, r.defuseProgress - dt * 1.6);
-      effects.defuse(state.bomb.x, state.bomb.z, r.defuseProgress, anyDefusing);
-      r.beep -= dt;
-      if (r.beep <= 0) {
-        r.beepGap = 1.0 - 0.88 * clamp(1 - r.fuse / ROUNDS.fuse, 0, 1);
-        r.beep = r.beepGap;
-        state.bomb.led = 1;
-        if (audio) audio.beep(clamp(1 - r.fuse / ROUNDS.fuse, 0, 1));
-      }
-      state.bomb.led = Math.max(0, state.bomb.led - dt * 4);
-      bomb.ledMat.color.setHex(state.bomb.led > 0.2 ? 0xff2a1e : 0x4a0d0a);
-      bomb.beep.scale.setScalar(1 + state.bomb.led * 1.5);
-      bomb.group.position.y = Math.sin(state.time * 8) * 0.005;
-      setPrompt(anyDefusing ? 'DEFUSE IN PROGRESS' : 'HOLD THE SITE');
-      if (r.defuseProgress >= 1) {
-        endRound('defenders', 'CHARGE DEFUSED');
-        return;
-      }
-      if (r.fuse <= 0) {
-        detonate();
-        return;
-      }
-      if (bots.allDead()) endRound('attackers', 'RUST ELIMINATED');
-      return;
-    }
-    if (r.phase === 'ended') {
-      r.ended -= dt;
-      if (r.ended <= 0) {
-        if (r.score[0] >= ROUNDS.wins || r.score[1] >= ROUNDS.wins) {
-          r.phase = 'matchEnd';
-          state.flags.roundEnd = false;
-          state.flags.matchEnd = true;
-          state.match.result = r.score[0] >= ROUNDS.wins ? 'MATCH WON' : 'MATCH LOST';
-          if (audio) audio.matchEnd(state.match.result === 'MATCH WON');
-        } else {
-          setPrompt('');
-          startBuy();
-        }
-      }
-    }
-  };
-
-  function inputPlant(dt, site) {
-    const p = state.player;
-    const moving = p.speed > 0.25 || p.moving;
-    const firing = p.firedAt < 0.1;
-    const damaged = p.lastDamage < 0.25;
-    const held = state.inputRef && state.inputRef.isDown('KeyE');
-    if (moving || firing || damaged) {
-      if (state.round.plantProgress > 0) setPrompt('PLANT CANCELLED');
-      state.round.plantProgress = Math.max(0, state.round.plantProgress - dt * 3);
-      return false;
-    }
-    if (!held) {
-      state.round.plantProgress = Math.max(0, state.round.plantProgress - dt * 3);
-      setPrompt('HOLD E TO PLANT');
-      return false;
-    }
-    state.round.plantProgress = Math.min(1, state.round.plantProgress + dt / ROUNDS.plant);
-    setPrompt(`PLANTING ${Math.floor(state.round.plantProgress * 100)}%`);
-    if (audio) audio.plantTick(state.round.plantProgress);
-    if (state.round.plantProgress >= 1) {
-      plant(site);
-      return true;
-    }
-    return false;
   }
 
-  const updateBombIdle = () => {
-    if (state.round.phase === 'planted') {
-      bomb.group.rotation.y += 0.0012;
-      const pulse = 0.5 + Math.sin(state.time * 6) * 0.5;
-      bomb.beep.material.opacity = 0.15 + pulse * 0.25;
-    }
-  };
+  function startMatch() {
+    state.scoreYou = 0;
+    state.scoreRust = 0;
+    state.round = 1;
+    state.kills = 0;
+    state.plants = 0;
+    state.shots = 0;
+    state.hits = 0;
+    state.money = ECONOMY.start;
+    state.primary = null;
+    state.matchResult = '';
+    startBuyPhase();
+  }
 
-  const stageBomb = (x, z, site) => {
-    showBomb(x, z, site);
-    state.round.plantSite = site;
-    bomb.ledMat.color.setHex(0xff2a1e);
-  };
+  function startBuyPhase() {
+    state.mode = 'buy';
+    state.buyClock = ROUND.buy;
+    state.clock = ROUND.live;
+    state.buyOpen = true;
+    state.endClock = 0;
+    state.plant.time = 0;
+    state.plant.active = false;
+    state.plant.site = null;
+    state.alive = true;
+    state.health = 100;
+    state.armor = 0;
+    state.grenades.frag = 0;
+    state.grenades.flash = 0;
+    state.grenade = null;
+    state.damageFlash = 0;
+    state.shake = 0;
+    state.flash = 0;
+    resetBomb();
+    effects.reset();
+    player.respawn();
+    bots.spawnRound();
+    weapon.resetRound();
+    lastGear = 100;
+    lastShots = state.shots;
+    hud.setOverlay('buy');
+    hud.setPrompt('', 0);
+    input.unlock();
+  }
+
+  function startLive() {
+    if (state.mode !== 'buy') return;
+    state.mode = 'live';
+    state.buyOpen = false;
+    state.buyClock = 0;
+    state.clock = ROUND.live;
+    state.bomb.fuse = 0;
+    state.plant.time = 0;
+    state.plant.active = false;
+    state.plant.site = null;
+    bots.activate();
+    hud.setOverlay(null);
+    hud.addFeed('TIDE DEPLOYED — PLANT AT A OR B', 'call');
+    input.lock();
+  }
+
+  function toggleBuy() {
+    if (state.mode !== 'buy') return;
+    if (state.buyOpen) {
+      closeBuy();
+    } else {
+      state.buyOpen = true;
+      hud.setOverlay('buy');
+      input.unlock();
+    }
+  }
+
+  function closeBuy() {
+    if (state.mode !== 'buy') return;
+    state.buyOpen = false;
+    hud.setOverlay(null);
+    input.lock();
+  }
+
+  function buy(id) {
+    if (state.mode !== 'buy') return false;
+    let price = 0;
+    if (id === 'armor') {
+      price = ECONOMY.armor;
+      if (state.armor > 0) return false;
+    } else if (id === 'frag' || id === 'flash') {
+      price = id === 'frag' ? ECONOMY.frag : ECONOMY.flash;
+      if (state.grenades[id] > 0) return false;
+    } else {
+      if (!WEAPONS[id] || WEAPONS[id].slot !== 2) return false;
+      price = WEAPONS[id].price;
+      if (state.primary === id) return false;
+    }
+    if (state.money < price) return false;
+    state.money -= price;
+    if (id === 'armor') state.armor = 100;
+    else if (id === 'frag' || id === 'flash') state.grenades[id] = 1;
+    else {
+      state.primary = id;
+      weapon.equip(id);
+    }
+    audio.buy();
+    hud.addFeed(`${id === 'armor' ? 'PLATE ARMOR' : id === 'frag' ? 'FRAG CHARGE' : id === 'flash' ? 'FLASH CHARGE' : WEAPONS[id].name} ACQUIRED`, 'call');
+    return true;
+  }
+
+  function completePlant(siteKey) {
+    if (state.mode !== 'live') return false;
+    const site = MAP.sites[siteKey];
+    state.mode = 'planted';
+    state.bomb.active = true;
+    state.bomb.planted = true;
+    state.bomb.fuse = ROUND.fuse;
+    state.bomb.defuse = 0;
+    state.bomb.defusing = false;
+    state.bomb.defuserId = -1;
+    state.bomb.beep = 0;
+    state.plant.time = 0;
+    state.plant.active = false;
+    state.plant.site = siteKey;
+    state.money = Math.min(ECONOMY.cap, state.money + ECONOMY.plant);
+    state.plants += 1;
+    showBomb(site.x, site.z);
+    bots.hear(site.x, site.z, 60);
+    hud.addFeed(`YOU > CHARGE PLANTED AT ${siteKey}`, 'you');
+    audio.plant();
+    hud.setPrompt('CHARGE PLANTED — DEFEND', 1.2);
+    return true;
+  }
+
+  function stageCharge(siteKey, progress) {
+    const site = MAP.sites[siteKey];
+    state.mode = 'live';
+    state.plant.site = siteKey;
+    state.plant.active = true;
+    state.plant.time = ROUND.plantTime * progress;
+    showBomb(site.x, site.z);
+  }
+
+  function detonate() {
+    effects.explosion(state.bomb.x, 0.1, state.bomb.z);
+    audio.explosion();
+    state.shake = 0.9;
+    state.flash = 0.8;
+    bomb.visible = false;
+  }
+
+  function updatePlant(dt) {
+    const gear = state.health + state.armor;
+    if (gear < lastGear - 0.01 || state.shots !== lastShots) {
+      state.plant.time = 0;
+      state.plant.active = false;
+      lastGear = gear;
+      lastShots = state.shots;
+    } else {
+      lastGear = gear;
+      lastShots = state.shots;
+    }
+    const site = map.nearSite(state.player.x, state.player.z);
+    const holding = input.keys.KeyE;
+    if (site && holding && state.alive && state.player.speed < 0.7) {
+      if (!state.plant.active) {
+        state.plant.active = true;
+        state.plant.site = site;
+        showBomb(MAP.sites[site].x, MAP.sites[site].z);
+      }
+      state.plant.time += dt;
+      if (state.plant.time >= ROUND.plantTime) completePlant(site);
+    } else if (state.plant.active) {
+      state.plant.active = false;
+      state.plant.time = 0;
+      if (!state.bomb.planted) bomb.visible = false;
+    }
+    if (state.plant.active && state.plant.time > 0 && Math.floor(state.plant.time * 2.5) !== Math.floor((state.plant.time - dt) * 2.5)) audio.plantTick();
+  }
+
+  function endRound(winner, reason) {
+    if (state.mode === 'ended' || state.mode === 'matchEnd') return;
+    const win = winner === 'you';
+    state.mode = 'ended';
+    state.endClock = ROUND.end;
+    state.plant.active = false;
+    state.plant.time = 0;
+    state.bomb.planted = false;
+    state.bomb.active = false;
+    state.bomb.defusing = false;
+    state.bomb.defuse = 0;
+    state.bomb.defuserId = -1;
+    bomb.visible = false;
+    ring.visible = false;
+    if (win) state.scoreYou += 1;
+    else state.scoreRust += 1;
+    const delta = win ? ECONOMY.win : ECONOMY.loss;
+    state.money = Math.min(ECONOMY.cap, state.money + delta);
+    hud.showRound(win, reason, delta, ROUND.end);
+    hud.setOverlay('round');
+    audio.roundEnd(win);
+  }
+
+  function showMatch() {
+    const win = state.scoreYou >= ROUND.target;
+    state.mode = 'matchEnd';
+    state.matchResult = win ? 'MATCH WON' : 'MATCH LOST';
+    hud.showMatch(win, {
+      rounds: `${state.scoreYou} : ${state.scoreRust}`,
+      kills: state.kills,
+      plants: state.plants,
+      accuracy: weapon.accuracy(),
+    });
+    hud.setOverlay('match');
+    input.unlock();
+  }
+
+  function nextRound() {
+    if (state.scoreYou >= ROUND.target || state.scoreRust >= ROUND.target) {
+      showMatch();
+      return;
+    }
+    state.round += 1;
+    startBuyPhase();
+  }
+
+  function restartMatch() {
+    startMatch();
+    hud.setOverlay('buy');
+  }
+
+  function updateBombVisuals(dt) {
+    if (state.bomb.planted) {
+      state.bomb.led += dt;
+      led.visible = Math.floor(state.bomb.led * (6 + (1 - state.bomb.fuse / ROUND.fuse) * 12)) % 2 === 0;
+      ring.visible = state.bomb.defusing;
+      if (ring.visible) {
+        const k = clamp(state.bomb.defuse / ROUND.defuseTime, 0, 1);
+        ring.scale.setScalar(0.35 + k * 0.9);
+        ringMaterial.opacity = 0.55 + Math.sin(state.time * 12) * 0.2;
+      }
+      state.bomb.beep -= dt;
+      if (state.bomb.beep <= 0 && state.bomb.fuse > 0) {
+        beepGap = lerp(0.12, 1.0, clamp(state.bomb.fuse / ROUND.fuse, 0, 1));
+        state.bomb.beep = beepGap;
+        audio.beep();
+      }
+    } else {
+      led.visible = true;
+      ring.visible = false;
+    }
+  }
+
+  function update(dt) {
+    if (state.mode === 'buy') {
+      if (input.pressed.has('KeyB')) toggleBuy();
+      state.buyClock -= dt;
+      if (state.buyClock <= 0) startLive();
+      updateBombVisuals(dt);
+      return;
+    }
+    updateBombVisuals(dt);
+    if (state.mode === 'live') {
+      state.clock = Math.max(0, state.clock - dt);
+      updatePlant(dt);
+      if (state.mode !== 'live') return;
+      if (state.health <= 0) { endRound('rust', 'TIDE DOWN'); return; }
+      if (bots.allDead()) { endRound('you', 'DEFENDERS DOWN'); return; }
+      if (state.clock <= 0) { endRound('rust', 'TIME EXPIRED'); return; }
+    } else if (state.mode === 'planted') {
+      state.bomb.fuse = Math.max(0, state.bomb.fuse - dt);
+      if (state.health <= 0) { endRound('rust', 'TIDE DOWN'); return; }
+      if (state.bomb.defuse >= ROUND.defuseTime) { endRound('rust', 'CHARGE DEFUSED'); return; }
+      if (bots.allDead()) { endRound('you', 'DEFENDERS DOWN'); return; }
+      if (state.bomb.fuse <= 0) { detonate(); endRound('you', 'CHARGE DETONATED'); return; }
+    } else if (state.mode === 'ended') {
+      state.endClock -= dt;
+      if (state.endClock <= 0) {
+        if (state.scoreYou >= ROUND.target || state.scoreRust >= ROUND.target) showMatch();
+        else nextRound();
+      }
+    }
+  }
 
   return {
-    update,
-    updateBombIdle,
-    startMatch,
-    startBuy,
-    restart,
-    closeBuy,
-    toggleBuy,
-    buy,
-    endRound,
-    plant,
-    detonate,
-    stageBomb,
-    hideBomb,
-    bomb,
-    nearestSite,
-    showBomb,
+    bomb, startMatch, startBuyPhase, startLive, closeBuy, toggleBuy, buy, update,
+    completePlant, stageCharge, endRound, restartMatch, showMatch, resetBomb,
   };
 }

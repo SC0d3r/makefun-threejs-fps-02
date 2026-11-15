@@ -1,9 +1,11 @@
-// Boot, fixed-step simulation, render copy pass, pointer lock and shot dispatch.
-// Import order is deliberate: match layer first, presentation last.
-import * as config from './config.js';
+import * as THREE from 'three';
+// Boot, fixed-step simulation and the two-pass render. Order matters: config,
+// state, input, util, nav, bots, rounds, map, player, weapon, effects, HUD,
+// audio, shot — the dossier then reads match logic before presentation.
+import { PALETTE } from './config.js';
 import { createState } from './state.js';
 import { createInput } from './input.js';
-import * as util from './util.js';
+import { clamp } from './util.js';
 import { createNav } from './nav.js';
 import { createBots } from './bots.js';
 import { createRounds } from './rounds.js';
@@ -13,178 +15,144 @@ import { createWeapon } from './weapon.js';
 import { createEffects } from './effects.js';
 import { createHud } from './hud.js';
 import { createAudio } from './audio.js';
-import { createShot } from './shot.js';
-import * as THREE from 'three';
+import { createShot, readShot } from './shot.js';
 
-const params = new URLSearchParams(location.search);
-const shotName = params.get('shot');
-const seed = Number(params.get('seed') ?? '1') || 1;
-const state = createState(seed);
-const app = document.getElementById('app');
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const FIXED = 1 / 60;
+const state = createState();
+const canvas = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.35;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
-app.appendChild(renderer.domElement);
-renderer.domElement.setAttribute('aria-label', 'QUAY 9 first-person harbour');
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.autoClear = false;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, Math.hypot(config.MAP.maxX * 2, config.MAP.maxZ * 2) + 60);
-scene.add(camera);
+scene.background = new THREE.Color(PALETTE.night);
+scene.fog = new THREE.Fog(PALETTE.deep, 18, 80);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.05, 120);
 
-const input = createInput(renderer.domElement);
-const effects = createEffects(state, scene);
+const vmScene = new THREE.Scene();
+const vmCamera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 5);
+vmScene.add(new THREE.HemisphereLight(0x8fb6d0, 0x1a2028, 1.5));
+const vmKey = new THREE.DirectionalLight(0xffd2a0, 2.4);
+vmKey.position.set(1.2, 2, 1.4);
+vmScene.add(vmKey);
+const vmFill = new THREE.DirectionalLight(PALETTE.cyan, 0.8);
+vmFill.position.set(-1.2, 0.4, 0.6);
+vmScene.add(vmFill);
+
+const map = createMap(scene, renderer.capabilities.getMaxAnisotropy());
+const nav = createNav(map);
+const effects = createEffects(scene);
 const audio = createAudio();
-state.audio = audio;
-createMap(state, scene);
-const player = createPlayer(state, camera, input);
-const weapon = createWeapon(state, camera, scene, effects, audio, player, input);
-let rounds = null;
-const hud = createHud(state, {
-  onBuy: (item) => {
-    if (!rounds || !rounds.buy(item)) return;
-    audio.start();
-    state.paused = false;
-    input.requestLock();
-  },
-  onDeploy: () => startMatch(),
-  onCloseBuy: () => {
-    if (!rounds) return;
-    audio.start();
-    rounds.closeBuy();
-    state.paused = false;
-    input.requestLock();
-  },
-  onRestart: () => {
-    if (!rounds) return;
-    audio.start();
-    rounds.restart();
-    state.paused = false;
-  },
-  onResume: () => {
-    audio.start();
-    state.paused = false;
-    input.requestLock();
-  },
-});
-const nav = createNav(state);
-const bots = createBots(state, scene, nav, audio, effects, player);
-state.botAPI = bots;
-rounds = createRounds(state, scene, effects, audio, player, weapon, bots);
-state.inputRef = input;
+const hud = createHud(state);
+const input = createInput(state, canvas, () => hud.setOverlay('pause'));
+const player = createPlayer(state, camera, map, input, audio);
+const bots = createBots(state, scene, map, nav, player, hud, audio, effects);
+const weapon = createWeapon(state, scene, vmScene, map, bots, player, effects, audio, hud, input);
+const rounds = createRounds(state, scene, map, player, bots, weapon, hud, audio, effects, input);
+const shooter = createShot(state, { player, weapon, bots, rounds, hud });
 
-function startMatch() {
-  audio.start();
-  rounds.startMatch();
+function deploy() {
+  audio.enable();
+  state.started = true;
   state.paused = false;
-  hud.updateBuyReady();
+  rounds.startMatch();
 }
 
-const STEP = 1 / 60;
-let lastTime = performance.now();
-let accumulator = 0;
-
-function stepFixed(dt) {
-  if (state.shotFrozen) return;
-  state.time += dt;
-  if (state.round.phase === 'buy' && input.pressed('KeyB')) {
-    rounds.toggleBuy();
-    if (!state.flags.buyOpen) {
-      state.paused = false;
-      input.requestLock();
-    }
+function resume() {
+  state.paused = false;
+  if (state.mode === 'buy' && state.buyOpen) {
+    hud.setOverlay('buy');
+    input.unlock();
+    return;
   }
-  player.update(dt);
-  weapon.update(dt);
-  weapon.updateGrenades(dt);
-  bots.update(dt);
-  rounds.update(dt);
-  rounds.updateBombIdle();
-  effects.update(dt);
-  state.crosshairGap = weapon.currentSpread();
-  hud.update(dt);
+  hud.setOverlay(null);
+  input.lock();
+}
+
+hud.bind({
+  onDeploy: deploy,
+  onBuy: (id) => rounds.buy(id),
+  onRestart: () => { state.paused = false; rounds.restartMatch(); },
+  onResume: resume,
+});
+
+function step() {
+  state.time += FIXED;
+  state.step += 1;
+  state.hitmarker = Math.max(0, state.hitmarker - FIXED * 4.5);
+  state.damageFlash = Math.max(0, state.damageFlash - FIXED * 1.3);
+  state.shake = Math.max(0, state.shake - FIXED * 1.8);
+  state.calloutTime = Math.max(0, state.calloutTime - FIXED);
+  state.promptTime = Math.max(0, state.promptTime - FIXED);
+  player.update(FIXED);
+  weapon.update(FIXED);
+  if (state.mode === 'live' || state.mode === 'planted') bots.update(FIXED);
+  rounds.update(FIXED);
+  effects.update(FIXED);
   input.endStep();
 }
 
-function renderFrame() {
-  player.syncCamera(state.time);
+function render() {
+  player.applyCamera();
+  hud.update(FIXED);
+  renderer.clear(true, true, true);
   renderer.render(scene, camera);
+  renderer.clearDepth();
+  renderer.render(vmScene, vmCamera);
+  if (state.shotFrozen) {
+    state.shotFrames += 1;
+    if (state.shotFrames >= 2) window.__shotReady = true;
+  }
 }
+
+let last = performance.now() / 1000;
+let accumulator = 0;
 
 function frame(now) {
-  requestAnimationFrame(frame);
-  if (state.shotFrozen) return;
-  const raw = (now - lastTime) / 1000;
-  lastTime = now;
-  const dt = util.clamp(raw, 0, 0.1);
-  if (!state.paused) {
+  const dt = clamp(now / 1000 - last, 0, 0.1);
+  last = now / 1000;
+  if (!state.shot && !state.paused && state.started) {
     accumulator += dt;
     let steps = 0;
-    while (accumulator >= STEP && steps < 5) {
-      stepFixed(STEP);
-      accumulator -= STEP;
+    while (accumulator >= FIXED && steps < 5) {
+      step();
+      accumulator -= FIXED;
       steps += 1;
     }
+    if (steps === 5) accumulator = 0;
   } else {
+    input.flushMouse();
     accumulator = 0;
-    hud.update(0);
-    input.endStep();
   }
-  if (input.locked && (state.flags.roundEnd || state.flags.matchEnd || state.flags.startOpen || state.flags.buyOpen)) {
-    input.releaseLock();
-  }
-  renderFrame();
-}
-
-input.onLock(() => {
-  state.paused = false;
-  audio.resume();
-});
-input.onUnlock(() => {
-  if (state.shotMode) return;
-  if (state.mode === 'playing' && !state.flags.buyOpen && !state.flags.roundEnd && !state.flags.matchEnd && !state.flags.startOpen) {
-    state.paused = true;
-  }
-});
-
-renderer.domElement.addEventListener('click', () => {
-  if (state.shotMode || state.mode !== 'playing' || state.flags.buyOpen || state.flags.roundEnd || state.flags.matchEnd) return;
-  if (!input.locked) {
-    state.paused = false;
-    audio.start();
-    input.requestLock();
-  }
-});
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && state.mode === 'playing' && !state.shotMode) state.paused = true;
-});
-
-hud.update(0);
-
-if (shotName && ['cover', 'firefight', 'plant', 'buy'].includes(shotName)) {
-  state.shotMode = true;
-  state.flags.startOpen = false;
-  state.mode = 'playing';
-  input.setEnabled(false);
-  const shot = createShot(state, scene, camera, player, weapon, bots, rounds, effects, hud, stepFixed);
-  shot.enter(shotName);
-  hud.update(0);
-  renderFrame();
-  requestAnimationFrame(() => {
-    renderFrame();
-    state.shotFrozen = true;
-    window.__shotReady = true;
-  });
-} else {
-  window.__shotReady = false;
+  render();
   requestAnimationFrame(frame);
 }
+
+function resize() {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  renderer.setSize(width, height);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  vmCamera.aspect = width / height;
+  vmCamera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+const shotMode = readShot();
+if (shotMode) {
+  shooter.stageShot(shotMode);
+} else {
+  hud.setOverlay('start');
+  state.mode = 'start';
+}
+window.addEventListener('pointerdown', () => audio.enable(), { once: true });
+window.addEventListener('keydown', () => audio.enable(), { once: true });
+window.__shotReady = false;
+requestAnimationFrame(frame);

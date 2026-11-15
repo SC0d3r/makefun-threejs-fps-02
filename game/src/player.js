@@ -1,218 +1,229 @@
-// First-person movement, collision, camera sync and the player's damage model.
-import { PLAYER } from './config.js';
-import { clamp } from './util.js';
+// Player movement and health. The fixed step owns positions and velocity;
+// render only copies the eye and recoil onto the camera.
+import { MAP, PLAYER } from './config.js';
+import { clamp, damp } from './util.js';
 
-export function createPlayer(state, camera, input) {
-  let bobPhase = 0;
+const SENS = 0.0022;
 
-  const blockedAt = (x, z, feet, height) => {
-    const r = PLAYER.radius;
-    for (let i = 0; i < state.colliders.length; i += 1) {
-      const c = state.colliders[i];
-      if (feet + height <= c.minY + 0.06 || feet >= c.maxY - 0.04) continue;
-      if (x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ) return true;
+export function createPlayer(state, camera, map, input, audio) {
+  const pos = state.player;
+  let eye = PLAYER.eyeStand;
+  let stepDistance = 0;
+  let damageCooldown = 0;
+
+  camera.rotation.order = 'YXZ';
+
+  function overlaps(x, y, z, height) {
+    const half = PLAYER.half;
+    for (let i = 0; i < map.colliders.length; i++) {
+      const c = map.colliders[i];
+      if (x + half <= c.minx || x - half >= c.maxx) continue;
+      if (z + half <= c.minz || z - half >= c.maxz) continue;
+      if (y + height <= c.miny || y >= c.maxy) continue;
+      return c;
     }
-    return false;
-  };
+    return null;
+  }
 
-  const canStand = () => {
-    const p = state.player;
-    return !blockedAt(p.pos.x, p.pos.z, p.pos.y, PLAYER.stand);
-  };
-
-  const look = (dx, dy) => {
-    const p = state.player;
-    p.yaw -= dx * 0.0022;
-    p.pitch = clamp(p.pitch - dy * 0.0022, -1.47, 1.47);
-    if (p.yaw > Math.PI) p.yaw -= Math.PI * 2;
-    if (p.yaw < -Math.PI) p.yaw += Math.PI * 2;
-  };
-
-  const update = (dt) => {
-    const p = state.player;
-    if (state.shotFrozen) return;
-    if (p.alive && state.mode === 'playing' && !state.paused && !state.flags.buyOpen) {
-      look(input.mouse.dx, input.mouse.dy);
+  function tryAxis(axis, amount) {
+    if (amount === 0) return;
+    const height = pos.crouch ? PLAYER.crouch : PLAYER.stand;
+    pos[axis] += amount;
+    let hit = overlaps(pos.x, pos.y, pos.z, height);
+    if (!hit) return;
+    const rise = hit.maxy - pos.y;
+    if (rise > 0 && rise <= PLAYER.step) {
+      const oldY = pos.y;
+      pos.y = hit.maxy + 0.002;
+      if (!overlaps(pos.x, pos.y, pos.z, height)) return;
+      pos.y = oldY;
     }
-    if (!p.alive) {
-      p.deadT += dt;
-      p.vel.x = 0;
-      p.vel.z = 0;
-      p.vel.y -= PLAYER.gravity * dt;
-      p.pos.y = Math.max(-0.2, p.pos.y + p.vel.y * dt);
+    if (axis === 'x') pos.x = amount > 0 ? hit.minx - PLAYER.half - 0.001 : hit.maxx + PLAYER.half + 0.001;
+    else pos.z = amount > 0 ? hit.minz - PLAYER.half - 0.001 : hit.maxz + PLAYER.half + 0.001;
+    if (axis === 'x') pos.vx = 0;
+    else pos.vz = 0;
+  }
+
+  function floorAt(prevY) {
+    let land = 0;
+    for (let i = 0; i < map.colliders.length; i++) {
+      const c = map.colliders[i];
+      if (pos.x + PLAYER.half <= c.minx || pos.x - PLAYER.half >= c.maxx) continue;
+      if (pos.z + PLAYER.half <= c.minz || pos.z - PLAYER.half >= c.maxz) continue;
+      if (prevY >= c.maxy - 0.02 && pos.y <= c.maxy && c.maxy > land) land = c.maxy;
+    }
+    return land;
+  }
+
+  function update(dt) {
+    const mx = input.mouseX;
+    const my = input.mouseY;
+    input.consumeMouse();
+    if (state.alive) {
+      state.yaw -= mx * SENS;
+      state.pitch = clamp(state.pitch - my * SENS, -1.42, 1.42);
+    }
+
+    state.recoilPitch = damp(state.recoilPitch, 0, 16, dt);
+    state.recoilYaw = damp(state.recoilYaw, 0, 16, dt);
+    damageCooldown = Math.max(0, damageCooldown - dt);
+
+    if (state.mode !== 'live' && state.mode !== 'planted') {
+      state.player.speed = 0;
+      eye = damp(eye, pos.crouch ? PLAYER.eyeCrouch : PLAYER.eyeStand, 10, dt);
       return;
     }
 
-    const active = state.mode === 'playing' && !state.paused && !state.flags.buyOpen && !state.flags.roundEnd && !state.flags.matchEnd;
-    const crouching = active && (input.isDown('ControlLeft') || input.isDown('ControlRight') || input.isDown('KeyC'));
-    const wantCrouch = crouching || !canStand();
-    p.crouch += ((wantCrouch ? 1 : 0) - p.crouch) * Math.min(1, dt * 12);
-    p.height = PLAYER.stand + (PLAYER.crouch - PLAYER.stand) * p.crouch;
-    p.eye = PLAYER.eye + (PLAYER.eyeCrouch - PLAYER.eye) * p.crouch;
+    const wantCrouch = !!(input.keys.ControlLeft || input.keys.ControlRight);
+    const height = pos.crouch ? PLAYER.crouch : PLAYER.stand;
+    if (wantCrouch && !pos.crouch) {
+      pos.crouch = true;
+    } else if (!wantCrouch && pos.crouch) {
+      if (!overlaps(pos.x, pos.y, pos.z, PLAYER.stand)) pos.crouch = false;
+    }
+    eye = damp(eye, pos.crouch ? PLAYER.eyeCrouch : PLAYER.eyeStand, 14, dt);
 
-    let fx = 0;
-    let fz = 0;
-    if (active) {
-      if (input.isDown('KeyW')) fz -= 1;
-      if (input.isDown('KeyS')) fz += 1;
-      if (input.isDown('KeyA')) fx -= 1;
-      if (input.isDown('KeyD')) fx += 1;
+    let forward = 0;
+    let strafe = 0;
+    if (input.keys.KeyW) forward += 1;
+    if (input.keys.KeyS) forward -= 1;
+    if (input.keys.KeyD) strafe += 1;
+    if (input.keys.KeyA) strafe -= 1;
+    const length = Math.hypot(forward, strafe);
+    if (length > 0) {
+      forward /= length;
+      strafe /= length;
     }
-    const len = Math.hypot(fx, fz);
-    if (len > 0) {
-      fx /= len;
-      fz /= len;
-    }
-    const walk = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-    p.walk = walk;
-    const maxSpeed = wantCrouch ? PLAYER.crouchSpeed : walk ? PLAYER.walk : PLAYER.speed;
-    const sin = Math.sin(p.yaw);
-    const cos = Math.cos(p.yaw);
-    const wishX = (fx * cos - fz * sin) * maxSpeed;
-    const wishZ = (fx * sin + fz * cos) * maxSpeed;
-    const accel = p.onGround ? PLAYER.accel : PLAYER.airAccel;
-    p.vel.x += (wishX - p.vel.x) * Math.min(1, accel * dt);
-    p.vel.z += (wishZ - p.vel.z) * Math.min(1, accel * dt);
-    if (len === 0 && p.onGround) {
-      const damp = Math.max(0, 1 - PLAYER.friction * dt);
-      p.vel.x *= damp;
-      p.vel.z *= damp;
+    const sin = Math.sin(state.yaw);
+    const cos = Math.cos(state.yaw);
+    const wishX = -sin * forward + cos * strafe;
+    const wishZ = -cos * forward - sin * strafe;
+    const target = pos.crouch ? PLAYER.crouchSpeed : (input.keys.ShiftLeft || input.keys.ShiftRight) ? PLAYER.walk : PLAYER.speed;
+
+    if (pos.onGround) {
+      if (length > 0) {
+        const rate = PLAYER.accel * dt;
+        pos.vx += clamp(wishX * target - pos.vx, -rate, rate);
+        pos.vz += clamp(wishZ * target - pos.vz, -rate, rate);
+      } else {
+        const speed = Math.hypot(pos.vx, pos.vz);
+        const next = Math.max(0, speed - Math.max(speed, 1) * PLAYER.friction * dt);
+        const scale = speed > 0.0001 ? next / speed : 0;
+        pos.vx *= scale;
+        pos.vz *= scale;
+      }
+      if (input.pressed.has('Space')) {
+        pos.vy = PLAYER.jump;
+        pos.onGround = false;
+      }
+    } else {
+      const rate = PLAYER.air * dt;
+      pos.vx += clamp(wishX * target - pos.vx, -rate, rate);
+      pos.vz += clamp(wishZ * target - pos.vz, -rate, rate);
     }
 
-    if (active && input.isDown('Space') && p.onGround) {
-      p.vel.y = PLAYER.jump;
-      p.onGround = false;
-      if (state.audio) state.audio.jump();
-    }
-    p.vel.y -= PLAYER.gravity * dt;
-    p.pos.y += p.vel.y * dt;
-    if (p.pos.y <= 0) {
-      p.pos.y = 0;
-      p.vel.y = 0;
-      p.onGround = true;
+    tryAxis('x', pos.vx * dt);
+    tryAxis('z', pos.vz * dt);
+    pos.speed = Math.hypot(pos.vx, pos.vz);
+
+    const prevY = pos.y;
+    pos.vy = Math.max(-42, pos.vy - PLAYER.gravity * dt);
+    pos.y += pos.vy * dt;
+    if (pos.vy <= 0) {
+      const land = floorAt(prevY);
+      if (pos.y <= land) {
+        pos.y = land;
+        pos.vy = 0;
+        pos.onGround = true;
+      } else {
+        pos.onGround = false;
+      }
+    } else {
+      const hit = overlaps(pos.x, pos.y, pos.z, height);
+      if (hit) {
+        pos.y = hit.miny - height - 0.001;
+        pos.vy = 0;
+      }
+      pos.onGround = false;
     }
 
-    const nextX = p.pos.x + p.vel.x * dt;
-    if (!blockedAt(nextX, p.pos.z, p.pos.y, p.height)) p.pos.x = nextX;
-    else p.vel.x = 0;
-    const nextZ = p.pos.z + p.vel.z * dt;
-    if (!blockedAt(p.pos.x, nextZ, p.pos.y, p.height)) p.pos.z = nextZ;
-    else p.vel.z = 0;
-
-    p.pos.x = clamp(p.pos.x, -30.8, 30.8);
-    p.pos.z = clamp(p.pos.z, -22.8, 22.8);
-    const speed = Math.hypot(p.vel.x, p.vel.z);
-    p.speed = speed;
-    p.moving = speed > 0.35;
-    if (p.onGround && p.moving) {
-      bobPhase += dt * PLAYER.bobHz * Math.PI * 2;
-      p.stepDist += speed * dt;
-      if (p.stepDist > 2.15) {
-        p.stepDist = 0;
-        p.stepSide = 1 - p.stepSide;
-        if (state.audio) state.audio.step(p.stepSide);
+    state.bobPhase += pos.speed * dt * 2.1;
+    if (pos.onGround && pos.speed > 0.6) {
+      stepDistance += pos.speed * dt;
+      if (stepDistance > (pos.crouch ? 2.8 : 2.15)) {
+        stepDistance = 0;
+        audio.footstep(pos.crouch ? 0.5 : 1);
       }
     }
-    p.shake = Math.max(0, p.shake - dt * 2.4);
-    p.flash = Math.max(0, p.flash - dt);
-    p.lastDamage += dt;
-    p.firedAt += dt;
-  };
+  }
 
-  const takeDamage = (amount, fromX, fromZ) => {
-    const p = state.player;
-    if (!p.alive || state.shotFrozen || amount <= 0) return;
-    const absorbed = Math.min(p.armor, amount * 0.5);
-    p.armor -= absorbed;
-    p.health -= amount - absorbed;
-    p.lastDamage = 0;
-    p.damageDir = Math.atan2(fromX - p.pos.x, -(fromZ - p.pos.z)) - p.yaw;
-    p.shake = Math.min(0.24, p.shake + amount * 0.0025);
-    state.damageFlash = 1;
-    if (state.audio) state.audio.hurt();
-    if (p.health <= 0) {
-      p.health = 0;
-      p.alive = false;
-      p.deadT = 0;
-      p.grenadeSelect = null;
-      if (state.audio) state.audio.death();
+  function damage(amount, sourceX = 0, sourceZ = 0) {
+    if (!state.alive || state.health <= 0) return;
+    if (damageCooldown > 0.02) return;
+    damageCooldown = 0.04;
+    let left = amount;
+    if (state.armor > 0) {
+      const absorbed = Math.min(state.armor, amount * 0.5);
+      state.armor = Math.max(0, state.armor - absorbed);
+      left = amount - absorbed;
     }
-  };
+    state.health = Math.max(0, state.health - left);
+    state.damageFlash = Math.min(1, state.damageFlash + 0.35 + amount / 120);
+    state.shake = Math.min(0.6, state.shake + amount / 90);
+    const dx = pos.x - sourceX;
+    const dz = pos.z - sourceZ;
+    if (dx * dx + dz * dz < 90) state.lastHealth = state.health;
+    if (state.health <= 0) {
+      state.alive = false;
+      state.reload = 0;
+      state.grenade = null;
+    }
+  }
 
-  const reset = () => {
-    const p = state.player;
-    p.pos.x = 0;
-    p.pos.y = 0;
-    p.pos.z = 20;
-    p.vel.x = 0;
-    p.vel.y = 0;
-    p.vel.z = 0;
-    p.yaw = 0;
-    p.pitch = 0;
-    p.height = PLAYER.stand;
-    p.eye = PLAYER.eye;
-    p.crouch = 0;
-    p.health = 100;
-    p.armor = 0;
-    p.alive = true;
-    p.deadT = 0;
-    p.shake = 0;
-    p.flash = 0;
-    p.grenades.frag = 0;
-    p.grenades.flash = 0;
-    p.grenadeSelect = null;
-    p.onGround = true;
-    p.stepDist = 0;
-    p.lastDamage = 99;
-    p.firedAt = 99;
-    p.speed = 0;
-    p.moving = false;
-    bobPhase = 0;
+  function respawn() {
+    pos.x = MAP.playerSpawn.x;
+    pos.y = 0;
+    pos.z = MAP.playerSpawn.z;
+    pos.vx = 0;
+    pos.vy = 0;
+    pos.vz = 0;
+    pos.onGround = true;
+    pos.crouch = false;
+    pos.speed = 0;
+    eye = PLAYER.eyeStand;
+    state.health = 100;
+    state.armor = 0;
+    state.alive = true;
+    state.yaw = 0;
+    state.pitch = 0;
+    state.recoilPitch = 0;
+    state.recoilYaw = 0;
     state.damageFlash = 0;
-  };
+    state.shake = 0;
+    state.reload = 0;
+    state.grenade = null;
+    state.lastHealth = 100;
+    stepDistance = 0;
+  }
 
-  const setPose = (x, y, z, yaw, pitch, crouch = 0) => {
-    const p = state.player;
-    p.pos.x = x;
-    p.pos.y = y;
-    p.pos.z = z;
-    p.yaw = yaw;
-    p.pitch = pitch;
-    p.crouch = crouch;
-    p.height = PLAYER.stand + (PLAYER.crouch - PLAYER.stand) * crouch;
-    p.eye = PLAYER.eye + (PLAYER.eyeCrouch - PLAYER.eye) * crouch;
-    p.vel.x = 0;
-    p.vel.y = 0;
-    p.vel.z = 0;
-  };
+  function syncEye() {
+    eye = pos.crouch ? PLAYER.eyeCrouch : PLAYER.eyeStand;
+  }
 
-  const syncCamera = (time) => {
-    const p = state.player;
-    const bob = p.onGround && p.moving ? Math.sin(bobPhase) * PLAYER.bob : 0;
-    let y = p.pos.y + p.eye + bob + Math.sin(time * 2.1) * 0.003;
-    if (!p.alive) y = p.pos.y + 0.36 + Math.min(0.2, p.deadT);
-    const shakeX = p.shake > 0 ? Math.sin(time * 71) * p.shake * 0.18 : 0;
-    const shakeY = p.shake > 0 ? Math.cos(time * 57) * p.shake * 0.18 : 0;
-    camera.position.set(p.pos.x + shakeX, y + shakeY, p.pos.z);
-    camera.rotation.order = 'YXZ';
-    camera.rotation.y = p.yaw + (p.shake > 0 ? Math.sin(time * 63) * p.shake * 0.25 : 0);
-    camera.rotation.x = p.pitch;
-    camera.rotation.z = p.alive ? 0 : Math.min(0.9, p.deadT * 1.4);
-  };
+  function applyCamera() {
+    const bobScale = Math.min(1, pos.speed / PLAYER.speed);
+    const bobY = pos.onGround ? Math.sin(state.bobPhase) * 0.018 * bobScale : 0;
+    const bobX = pos.onGround ? Math.cos(state.bobPhase * 0.5) * 0.012 * bobScale : 0;
+    const shake = state.shake;
+    camera.position.set(
+      pos.x + bobX + (shake > 0 ? Math.sin(state.time * 71) * shake * 0.06 : 0),
+      pos.y + eye + bobY + (shake > 0 ? Math.cos(state.time * 83) * shake * 0.05 : 0),
+      pos.z
+    );
+    camera.rotation.y = state.yaw + state.recoilYaw;
+    camera.rotation.x = state.pitch + state.recoilPitch;
+    camera.rotation.z = 0;
+  }
 
-  return {
-    update,
-    takeDamage,
-    reset,
-    setPose,
-    syncCamera,
-    blockedAt,
-    canStand,
-    addShake(amount) {
-      state.player.shake = Math.min(0.4, state.player.shake + amount);
-    },
-    blind(seconds) {
-      state.player.flash = Math.max(state.player.flash, seconds);
-    },
-  };
+  return { update, damage, respawn, applyCamera, syncEye, overlaps, get eye() { return eye; } };
 }

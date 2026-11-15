@@ -1,13 +1,15 @@
-// Small allocation-free math and deterministic random helpers shared by the game.
+// Pure helpers plus the one AABB ray test shared by bullets, bot vision,
+// grenade line of sight and defuse interruption. All numbers, no allocation.
+export const TAU = Math.PI * 2;
 
-export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
-export const lerp = (a, b, t) => a + (b - a) * t;
-export const smooth = (t) => t * t * (3 - 2 * t);
-export const sign = (v) => (v < 0 ? -1 : v > 0 ? 1 : 0);
+export function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+export function lerp(a, b, t) { return a + (b - a) * t; }
+export function damp(a, b, rate, dt) { return lerp(a, b, 1 - Math.exp(-rate * dt)); }
+export function sign(v) { return v < 0 ? -1 : 1; }
 
 export function mulberry32(seed) {
   let a = seed >>> 0;
-  return function next() {
+  return function random() {
     a = (a + 0x6d2b79f5) >>> 0;
     let t = a;
     t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -16,91 +18,70 @@ export function mulberry32(seed) {
   };
 }
 
-export function formatClock(seconds) {
-  const s = Math.max(0, Math.ceil(seconds));
-  const m = Math.floor(s / 60);
-  return `${m}:${String(s % 60).padStart(2, '0')}`;
-}
+export function rand(rng, lo, hi) { return lo + (hi - lo) * rng(); }
 
-export function formatMoney(value) {
-  return `$${Math.max(0, Math.round(value)).toLocaleString('en-US')}`;
-}
-
-export function angleDiff(a, b) {
-  let d = (b - a) % (Math.PI * 2);
-  if (d > Math.PI) d -= Math.PI * 2;
-  if (d < -Math.PI) d += Math.PI * 2;
-  return d;
-}
-
-export function dist2(ax, az, bx, bz) {
-  const dx = ax - bx;
-  const dz = az - bz;
-  return dx * dx + dz * dz;
-}
-
-// Slab test. Returns true when the segment crosses the box; used for sight and bullets.
-export function segmentBox(ax, ay, az, bx, by, bz, minX, minY, minZ, maxX, maxY, maxZ) {
+// Slab test. Returns the entry distance or Infinity. Boxes are axis aligned and
+// use minx/miny/minz/maxx/maxy/maxz so both map colliders and bot parts share it.
+export function rayAABB(ox, oy, oz, dx, dy, dz, box) {
   let tmin = 0;
-  let tmax = 1;
-  const dx = bx - ax;
-  const dy = by - ay;
-  const dz = bz - az;
+  let tmax = 1e9;
   if (Math.abs(dx) < 1e-8) {
-    if (ax < minX || ax > maxX) return false;
+    if (ox < box.minx || ox > box.maxx) return Infinity;
   } else {
-    let t1 = (minX - ax) / dx;
-    let t2 = (maxX - ax) / dx;
-    if (t1 > t2) {
-      const t = t1;
-      t1 = t2;
-      t2 = t;
-    }
+    const inv = 1 / dx;
+    let t1 = (box.minx - ox) * inv;
+    let t2 = (box.maxx - ox) * inv;
+    if (t1 > t2) { const s = t1; t1 = t2; t2 = s; }
     if (t1 > tmin) tmin = t1;
     if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return false;
+    if (tmin > tmax) return Infinity;
   }
   if (Math.abs(dy) < 1e-8) {
-    if (ay < minY || ay > maxY) return false;
+    if (oy < box.miny || oy > box.maxy) return Infinity;
   } else {
-    let t1 = (minY - ay) / dy;
-    let t2 = (maxY - ay) / dy;
-    if (t1 > t2) {
-      const t = t1;
-      t1 = t2;
-      t2 = t;
-    }
+    const inv = 1 / dy;
+    let t1 = (box.miny - oy) * inv;
+    let t2 = (box.maxy - oy) * inv;
+    if (t1 > t2) { const s = t1; t1 = t2; t2 = s; }
     if (t1 > tmin) tmin = t1;
     if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return false;
+    if (tmin > tmax) return Infinity;
   }
   if (Math.abs(dz) < 1e-8) {
-    if (az < minZ || az > maxZ) return false;
+    if (oz < box.minz || oz > box.maxz) return Infinity;
   } else {
-    let t1 = (minZ - az) / dz;
-    let t2 = (maxZ - az) / dz;
-    if (t1 > t2) {
-      const t = t1;
-      t1 = t2;
-      t2 = t;
-    }
+    const inv = 1 / dz;
+    let t1 = (box.minz - oz) * inv;
+    let t2 = (box.maxz - oz) * inv;
+    if (t1 > t2) { const s = t1; t1 = t2; t2 = s; }
     if (t1 > tmin) tmin = t1;
     if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return false;
+    if (tmin > tmax) return Infinity;
   }
-  return true;
+  return tmin;
 }
 
-export function lineOfSight(state, ax, ay, az, bx, by, bz, pad = 0) {
-  for (let i = 0; i < state.colliders.length; i += 1) {
-    const c = state.colliders[i];
-    if (segmentBox(ax, ay, az, bx, by, bz, c.minX - pad, c.minY, c.minZ - pad, c.maxX + pad, c.maxY, c.maxZ + pad)) {
-      return false;
-    }
-  }
-  return true;
+export function pointInBox(x, y, z, box, pad = 0) {
+  return x >= box.minx - pad && x <= box.maxx + pad && y >= box.miny - pad && y <= box.maxy + pad && z >= box.minz - pad && z <= box.maxz + pad;
 }
 
-export function pointInBox(x, z, c, pad = 0) {
-  return x > c.minX - pad && x < c.maxX + pad && z > c.minZ - pad && z < c.maxZ + pad;
+export function fmtTime(seconds) {
+  const s = Math.max(0, Math.ceil(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+export function fmtClock(seconds) {
+  const s = Math.max(0, Math.ceil(seconds));
+  return `00:${String(s).padStart(2, '0')}`;
+}
+
+export function fmtMoney(value) {
+  return `$ ${Math.round(value).toLocaleString('en-US')}`;
+}
+
+export function angleDelta(a, b) {
+  let d = (b - a) % TAU;
+  if (d > Math.PI) d -= TAU;
+  if (d < -Math.PI) d += TAU;
+  return d;
 }

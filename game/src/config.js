@@ -1,6 +1,6 @@
-// One place for every tuning number. Modules read this instead of carrying constants.
-
-export const COLORS = {
+// Static design data: the palette is the contract for every material and CSS
+// accent, so map, bots and HUD cannot drift into different night-harbour looks.
+export const PALETTE = {
   night: 0x070d16,
   deep: 0x0e1722,
   concrete: 0x2b333b,
@@ -12,232 +12,33 @@ export const COLORS = {
   danger: 0xe5483c,
 };
 
-export const WEAPONS = {
-  pistol: {
-    id: 'pistol',
-    name: 'MARLIN .45',
-    role: 'Reliable sidearm',
-    price: 0,
-    mag: 12,
-    reserve: 48,
-    damage: 44,
-    head: 2.1,
-    leg: 0.8,
-    gap: 0.16,
-    spread: 0.006,
-    spreadMove: 0.02,
-    reload: 1.4,
-    pellets: 1,
-    auto: false,
-    recoil: 0.01,
-    kick: 0.006,
-    range: 60,
-    stats: [0.62, 0.38, 0.8],
-  },
-  smg: {
-    id: 'smg',
-    name: 'KESTREL SMG',
-    role: 'Close burst control',
-    price: 1250,
-    mag: 30,
-    reserve: 90,
-    damage: 25,
-    head: 1.8,
-    leg: 0.8,
-    gap: 0.075,
-    spread: 0.012,
-    spreadMove: 0.03,
-    reload: 1.8,
-    pellets: 1,
-    auto: true,
-    recoil: 0.012,
-    kick: 0.008,
-    range: 55,
-    stats: [0.38, 0.86, 0.58],
-  },
-  rifle: {
-    id: 'rifle',
-    name: 'LONGSHORE AR',
-    role: 'All-round harbour rifle',
-    price: 2700,
-    mag: 30,
-    reserve: 90,
-    damage: 34,
-    head: 2.2,
-    leg: 0.8,
-    gap: 0.1,
-    spread: 0.008,
-    spreadMove: 0.032,
-    reload: 2.0,
-    pellets: 1,
-    auto: true,
-    recoil: 0.018,
-    kick: 0.012,
-    range: 70,
-    stats: [0.66, 0.68, 0.74],
-  },
-  shotgun: {
-    id: 'shotgun',
-    name: 'BREAKWATER 12G',
-    role: 'Nine pellet doorway denial',
-    price: 1800,
-    mag: 6,
-    reserve: 24,
-    damage: 9,
-    head: 1.5,
-    leg: 0.8,
-    gap: 0.85,
-    spread: 0.055,
-    spreadMove: 0.075,
-    reload: 2.6,
-    pellets: 9,
-    auto: false,
-    recoil: 0.024,
-    kick: 0.018,
-    range: 45,
-    stats: [0.92, 0.2, 0.3],
-  },
-};
-
-export const GRENADES = {
-  frag: { id: 'frag', name: 'FRAG CHARGE', price: 300, fuse: 0.9, radius: 5, damage: 130, key: '3' },
-  flash: { id: 'flash', name: 'FLASH CHARGE', price: 200, fuse: 1.2, radius: 9, blind: 2.5, key: '4' },
-};
-
-export const ECONOMY = {
-  cap: 9000,
-  win: 3000,
-  loss: 1900,
-  kill: 300,
-  plant: 300,
-  armorPrice: 650,
-  armorStart: 50,
-};
-
-export const ROUNDS = {
-  buy: 12,
-  live: 105,
-  fuse: 40,
-  ended: 4,
-  plant: 3.2,
-  plantRange: 6,
-  defuse: 5,
-  defuseRange: 1.6,
-  wins: 5,
-};
-
+export const ROUND = { buy: 12, live: 105, fuse: 40, end: 4, target: 5, plantTime: 3.2, defuseTime: 5 };
+export const ECONOMY = { start: 1900, win: 3000, loss: 1900, kill: 300, plant: 300, cap: 9000, armor: 650, frag: 300, flash: 200 };
 export const PLAYER = {
-  stand: 1.72,
-  crouch: 1.12,
-  eye: 1.6,
-  eyeCrouch: 1.02,
-  speed: 5.2,
-  walk: 2.6,
-  crouchSpeed: 2.4,
-  accel: 42,
-  friction: 9,
-  airAccel: 9,
-  gravity: 20,
-  jump: 6.2,
-  radius: 0.34,
-  bob: 0.018,
-  bobHz: 1.8,
+  stand: 1.72, crouch: 1.12, eyeStand: 1.6, eyeCrouch: 1.02,
+  speed: 5.2, walk: 2.6, crouchSpeed: 2.4, accel: 42, friction: 9, air: 9,
+  gravity: 20, jump: 6.2, half: 0.34, step: 0.45, skin: 0.04,
 };
 
-export const BOT = {
-  fov: 110,
-  range: 42,
-  eye: 1.55,
-  height: 1.75,
-  reactionMin: 0.25,
-  reactionMax: 0.45,
-  patrolSpeed: 3.4,
-  alertSpeed: 4.2,
-  arrive: 0.6,
-  replan: 0.7,
-  holdPause: [1.2, 2.4],
-  damageSmg: 12,
-  damageRifle: 16,
-  burstGap: 0.25,
-  reload: 1.8,
-  hear: 30,
-  hearBoom: 45,
+export const WEAPONS = {
+  pistol: { id: 'pistol', name: 'MARLIN .45', slot: 1, price: 0, mag: 12, reserve: 48, body: 44, head: 2.1, legs: 0.8, gap: 0.16, spread: 0.006, move: 0.020, reload: 1.4, recoil: 0.010, auto: false, mode: 'SEMI', sound: 1.0 },
+  smg: { id: 'smg', name: 'KESTREL SMG', slot: 2, price: 1250, mag: 30, reserve: 90, body: 25, head: 1.8, legs: 0.8, gap: 0.075, spread: 0.012, move: 0.030, reload: 1.8, recoil: 0.012, auto: true, mode: 'AUTO', sound: 1.15 },
+  rifle: { id: 'rifle', name: 'LONGSHORE AR', slot: 2, price: 2700, mag: 30, reserve: 90, body: 34, head: 2.2, legs: 0.8, gap: 0.10, spread: 0.008, move: 0.032, reload: 2.0, recoil: 0.018, auto: true, mode: 'AUTO', sound: 0.9 },
+  shotgun: { id: 'shotgun', name: 'BREAKWATER 12g', slot: 2, price: 1800, mag: 6, reserve: 24, body: 9, head: 1.5, legs: 0.8, gap: 0.85, spread: 0.055, move: 0.075, reload: 2.6, recoil: 0.025, auto: false, mode: 'PUMP', sound: 0.7, pellets: 9 },
 };
 
-export const BOT_ROLES = [
-  {
-    id: 'warden',
-    name: 'RUST.WARDEN',
-    site: 'A',
-    weapon: 'smg',
-    spawn: [-2, -20],
-    route: [
-      [-16, -8],
-      [-19, -12],
-      [-24, -16],
-      [0, -16],
-      [0, -2],
-      [-16, -8],
-    ],
-    holds: [
-      [-19, -12],
-      [-13, -7],
-    ],
-  },
-  {
-    id: 'cinder',
-    name: 'RUST.CINDER',
-    site: 'B',
-    weapon: 'smg',
-    spawn: [2, -20],
-    route: [
-      [16, -8],
-      [19, -12],
-      [24, -16],
-      [0, -16],
-      [0, -2],
-      [16, -8],
-    ],
-    holds: [
-      [19, -12],
-      [13, -7],
-    ],
-  },
-  {
-    id: 'roamer',
-    name: 'RUST.ROAMER',
-    site: 'MID',
-    weapon: 'rifle',
-    spawn: [0, -20],
-    route: [
-      [0, -2],
-      [-8, -4],
-      [0, -2],
-      [8, -4],
-      [0, -2],
-    ],
-    holds: [
-      [-3, -5],
-      [3, -9],
-    ],
-  },
-];
-
-export const SITES = [
-  { id: 'A', x: -16, z: -10, label: 'DRY DOCK 04', color: 0xffb15c },
-  { id: 'B', x: 16, z: -10, label: 'WAREHOUSE 09', color: 0x5fd6d0 },
+export const BUY = [
+  { id: 'rifle', name: 'LONGSHORE AR', price: 2700, role: '30 ROUNDS — HOLD LONG ANGLES', stats: [0.78, 0.62, 0.82] },
+  { id: 'smg', name: 'KESTREL SMG', price: 1250, role: 'FAST — CLEAR THE TUNNEL', stats: [0.48, 0.92, 0.58] },
+  { id: 'shotgun', name: 'BREAKWATER 12g', price: 1800, role: '9 PELLETS — SITE A CLOSE', stats: [0.95, 0.22, 0.4] },
+  { id: 'armor', name: 'PLATE ARMOR', price: 650, role: 'SOAKS HALF OF EVERY HIT', stats: [0.7, 0.5, 0.6] },
+  { id: 'frag', name: 'FRAG CHARGE', price: 300, role: '0.9 s FUSE — CLEARS COVER', stats: [0.9, 0.35, 0.3] },
+  { id: 'flash', name: 'FLASH CHARGE', price: 200, role: 'BLINDS 2.5 s — PUSH IN', stats: [0.3, 0.55, 0.45] },
 ];
 
 export const MAP = {
-  minX: -32,
-  maxX: 32,
-  minZ: -24,
-  maxZ: 24,
-  attackerSpawn: [0, 20],
-  defenderSpawn: [0, -20],
-  navMinX: -30,
-  navMaxX: 30,
-  navMinZ: -22,
-  navMaxZ: 22,
-  wallHeight: 6,
+  minX: -32, maxX: 32, minZ: -24, maxZ: 24,
+  playerSpawn: { x: 0, z: 20 },
+  botSpawn: { x: 0, z: -20 },
+  sites: { A: { x: -16, z: -10, radius: 6 }, B: { x: 16, z: -10, radius: 6 } },
 };

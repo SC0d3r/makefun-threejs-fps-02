@@ -1,200 +1,191 @@
-// 1 m navigation grid over the walkable floor. All scratch memory is module
-// scoped; findPath only writes into the caller's reusable flat out array.
+// Nav grid and A*. Typed arrays and fixed scratch storage mean a replan costs
+// no garbage, and string-pulling removes the staircase look of 4-neighbour paths.
 import { MAP } from './config.js';
-import { clamp } from './util.js';
 
-const W = MAP.navMaxX - MAP.navMinX + 1;
-const H = MAP.navMaxZ - MAP.navMinZ + 1;
-const CELLS = W * H;
-const blocked = new Uint8Array(CELLS);
-const gScore = new Float32Array(CELLS);
-const came = new Int32Array(CELLS);
-const closed = new Uint8Array(CELLS);
-const heapIndex = new Int32Array(CELLS * 2);
-const heapScore = new Float32Array(CELLS * 2);
-const raw = new Int32Array(CELLS);
-let heapSize = 0;
+const COLS = 60;
+const ROWS = 44;
+const CELL = 1;
+const X0 = -30;
+const Z0 = -22;
+const SIZE = COLS * ROWS;
+const EXPAND = 0.45;
 
-export function createNav(state) {
-  blocked.fill(0);
-  for (let iz = 0; iz < H; iz += 1) {
-    const z = MAP.navMinZ + iz;
-    for (let ix = 0; ix < W; ix += 1) {
-      const x = MAP.navMinX + ix;
-      const id = iz * W + ix;
-      let hit = false;
-      for (let c = 0; c < state.colliders.length; c += 1) {
-        const box = state.colliders[c];
-        if (
-          x > box.minX - 0.45 &&
-          x < box.maxX + 0.45 &&
-          z > box.minZ - 0.45 &&
-          z < box.maxZ + 0.45 &&
-          box.minY < 1.45 &&
-          box.maxY > 0.35
-        ) {
-          hit = true;
-          break;
-        }
+export function createNav(map) {
+  const blocked = new Uint8Array(SIZE);
+  const g = new Float32Array(SIZE);
+  const f = new Float32Array(SIZE);
+  const came = new Int32Array(SIZE);
+  const mark = new Uint8Array(SIZE);
+  const heap = new Int32Array(SIZE + 1);
+  let heapN = 0;
+  let stamp = 1;
+
+  for (let cz = 0; cz < ROWS; cz++) {
+    for (let cx = 0; cx < COLS; cx++) {
+      const x = X0 + cx + 0.5;
+      const z = Z0 + cz + 0.5;
+      let solid = false;
+      for (const c of map.colliders) {
+        if (c.miny > 1.65) continue;
+        if (x > c.minx - EXPAND && x < c.maxx + EXPAND && z > c.minz - EXPAND && z < c.maxz + EXPAND) { solid = true; break; }
       }
-      blocked[id] = hit ? 1 : 0;
+      blocked[cz * COLS + cx] = solid ? 1 : 0;
     }
   }
 
-  const idOf = (x, z) => {
-    const ix = clamp(Math.round(x - MAP.navMinX), 0, W - 1);
-    const iz = clamp(Math.round(z - MAP.navMinZ), 0, H - 1);
-    return iz * W + ix;
-  };
-  const openCell = (x, z) => {
-    const id = idOf(x, z);
-    return blocked[id] === 0 ? id : -1;
-  };
-  const openNear = (x, z) => {
-    let id = openCell(x, z);
-    if (id >= 0) return id;
-    const cx = clamp(Math.round(x - MAP.navMinX), 0, W - 1);
-    const cz = clamp(Math.round(z - MAP.navMinZ), 0, H - 1);
-    for (let r = 1; r <= 8; r += 1) {
-      for (let dz = -r; dz <= r; dz += 1) {
-        for (let dx = -r; dx <= r; dx += 1) {
+  function cellOf(x, z) {
+    const cx = Math.max(0, Math.min(COLS - 1, Math.floor(x - X0)));
+    const cz = Math.max(0, Math.min(ROWS - 1, Math.floor(z - Z0)));
+    return cz * COLS + cx;
+  }
+
+  function freeCell(x, z) {
+    if (x < X0 || x > X0 + COLS || z < Z0 || z > Z0 + ROWS) return false;
+    return blocked[cellOf(x, z)] === 0;
+  }
+
+  function nearest(cx, cz) {
+    const start = cz * COLS + cx;
+    if (!blocked[start]) return start;
+    for (let r = 1; r <= 5; r++) {
+      for (let dz = -r; dz <= r; dz++) {
+        for (let dx = -r; dx <= r; dx++) {
           if (Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
           const nx = cx + dx;
           const nz = cz + dz;
-          if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
-          id = nz * W + nx;
-          if (!blocked[id]) return id;
+          if (nx < 0 || nx >= COLS || nz < 0 || nz >= ROWS) continue;
+          const i = nz * COLS + nx;
+          if (!blocked[i]) return i;
         }
       }
     }
-    return -1;
-  };
+    return start;
+  }
 
-  const heapPush = (id, score) => {
-    let i = heapSize;
-    heapSize += 1;
-    heapIndex[i] = id;
-    heapScore[i] = score;
-    while (i > 0) {
-      const p = (i - 1) >> 1;
-      if (heapScore[p] <= heapScore[i]) break;
-      const ti = heapIndex[p];
-      const ts = heapScore[p];
-      heapIndex[p] = heapIndex[i];
-      heapScore[p] = heapScore[i];
-      heapIndex[i] = ti;
-      heapScore[i] = ts;
-      i = p;
+  function heapPush(index) {
+    let i = ++heapN;
+    heap[i] = index;
+    while (i > 1) {
+      const parent = i >> 1;
+      if (f[heap[parent]] <= f[heap[i]]) break;
+      const tmp = heap[parent];
+      heap[parent] = heap[i];
+      heap[i] = tmp;
+      i = parent;
     }
-  };
-  const heapPop = () => {
-    const top = heapIndex[0];
-    heapSize -= 1;
-    if (heapSize > 0) {
-      heapIndex[0] = heapIndex[heapSize];
-      heapScore[0] = heapScore[heapSize];
-      let i = 0;
-      for (;;) {
-        const l = i * 2 + 1;
-        const r = l + 1;
-        let best = i;
-        if (l < heapSize && heapScore[l] < heapScore[best]) best = l;
-        if (r < heapSize && heapScore[r] < heapScore[best]) best = r;
-        if (best === i) break;
-        const ti = heapIndex[best];
-        const ts = heapScore[best];
-        heapIndex[best] = heapIndex[i];
-        heapScore[best] = heapScore[i];
-        heapIndex[i] = ti;
-        heapScore[i] = ts;
-        i = best;
-      }
+  }
+
+  function heapPop() {
+    const top = heap[1];
+    heap[1] = heap[heapN--];
+    let i = 1;
+    for (;;) {
+      const left = i << 1;
+      const right = left + 1;
+      let small = i;
+      if (left <= heapN && f[heap[left]] < f[heap[small]]) small = left;
+      if (right <= heapN && f[heap[right]] < f[heap[small]]) small = right;
+      if (small === i) break;
+      const tmp = heap[small];
+      heap[small] = heap[i];
+      heap[i] = tmp;
+      i = small;
     }
     return top;
-  };
+  }
 
-  const lineClear = (ax, az, bx, bz) => {
-    const dx = bx - ax;
-    const dz = bz - az;
-    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.28));
-    for (let i = 0; i <= steps; i += 1) {
+  function lineFree(x0, z0, x1, z1) {
+    const dx = x1 - x0;
+    const dz = z1 - z0;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.22));
+    for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      const id = idOf(ax + dx * t, az + dz * t);
-      if (blocked[id]) return false;
+      if (!freeCell(x0 + dx * t, z0 + dz * t)) return false;
     }
     return true;
-  };
+  }
 
-  const findPath = (sx, sz, gx, gz, out) => {
-    out.length = 0;
-    const start = openNear(sx, sz);
-    const goal = openNear(gx, gz);
-    if (start < 0 || goal < 0) return out;
-    heapSize = 0;
-    for (let i = 0; i < CELLS; i += 1) {
-      gScore[i] = Infinity;
-      came[i] = -1;
-      closed[i] = 0;
+  // out = { xs: Float32Array, zs: Float32Array, n }, owned by the caller.
+  function findPath(sx, sz, tx, tz, out) {
+    out.n = 0;
+    const startCx = Math.max(0, Math.min(COLS - 1, Math.floor(sx - X0)));
+    const startCz = Math.max(0, Math.min(ROWS - 1, Math.floor(sz - Z0)));
+    const goalCx = Math.max(0, Math.min(COLS - 1, Math.floor(tx - X0)));
+    const goalCz = Math.max(0, Math.min(ROWS - 1, Math.floor(tz - Z0)));
+    const start = nearest(startCx, startCz);
+    const goal = nearest(goalCx, goalCz);
+    if (start === goal) {
+      out.xs[0] = tx;
+      out.zs[0] = tz;
+      out.n = 1;
+      return out;
     }
-    gScore[start] = 0;
-    heapPush(start, 0);
-    let guard = 0;
-    while (heapSize > 0 && guard < CELLS * 2) {
-      guard += 1;
-      const id = heapPop();
-      if (closed[id]) continue;
-      closed[id] = 1;
-      if (id === goal) break;
-      const ix = id % W;
-      const iz = (id / W) | 0;
-      for (let n = 0; n < 4; n += 1) {
-        const nx = ix + (n === 0 ? 1 : n === 1 ? -1 : 0);
-        const nz = iz + (n === 2 ? 1 : n === 3 ? -1 : 0);
-        if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
-        const nid = nz * W + nx;
-        if (blocked[nid] || closed[nid]) continue;
-        const tentative = gScore[id] + 1;
-        if (tentative >= gScore[nid]) continue;
-        gScore[nid] = tentative;
-        came[nid] = id;
-        const h = Math.abs(nx - (goal % W)) + Math.abs(nz - ((goal / W) | 0));
-        heapPush(nid, tentative + h);
+    stamp += 1;
+    heapN = 0;
+    g[start] = 0;
+    f[start] = Math.abs((start % COLS) - (goal % COLS)) + Math.abs(Math.floor(start / COLS) - Math.floor(goal / COLS));
+    mark[start] = stamp;
+    came[start] = -1;
+    heapPush(start);
+    let found = false;
+    while (heapN > 0) {
+      const current = heapPop();
+      if (current === goal) { found = true; break; }
+      const cx = current % COLS;
+      const cz = (current - cx) / COLS;
+      for (let dir = 0; dir < 4; dir++) {
+        const nx = cx + (dir === 0 ? 1 : dir === 1 ? -1 : 0);
+        const nz = cz + (dir === 2 ? 1 : dir === 3 ? -1 : 0);
+        if (nx < 0 || nx >= COLS || nz < 0 || nz >= ROWS) continue;
+        const next = nz * COLS + nx;
+        if (blocked[next]) continue;
+        const ng = g[current] + 1;
+        if (mark[next] === stamp && ng >= g[next]) continue;
+        mark[next] = stamp;
+        g[next] = ng;
+        f[next] = ng + Math.abs(nx - (goal % COLS)) + Math.abs(nz - Math.floor(goal / COLS));
+        came[next] = current;
+        heapPush(next);
       }
     }
-    if (came[goal] < 0 && goal !== start) return out;
+    if (!found) return out;
+
     let count = 0;
-    let cursor = goal;
-    while (cursor >= 0 && count < CELLS) {
-      raw[count] = cursor;
+    let node = goal;
+    while (node !== -1 && count < 256) {
+      out.xs[count] = X0 + (node % COLS) + 0.5;
+      out.zs[count] = Z0 + Math.floor(node / COLS) + 0.5;
       count += 1;
-      if (cursor === start) break;
-      cursor = came[cursor];
+      node = came[node];
     }
-    if (raw[count - 1] !== start) return out;
-    for (let i = 0; i < (count >> 1); i += 1) {
-      const tmp = raw[i];
-      raw[i] = raw[count - 1 - i];
-      raw[count - 1 - i] = tmp;
-    }
-    let current = 0;
-    while (current < count - 1) {
-      const cx = raw[current] % W;
-      const cz = (raw[current] / W) | 0;
-      let next = current + 1;
-      for (let j = count - 1; j > current + 1; j -= 1) {
-        const jx = raw[j] % W;
-        const jz = (raw[j] / W) | 0;
-        if (lineClear(MAP.navMinX + cx, MAP.navMinZ + cz, MAP.navMinX + jx, MAP.navMinZ + jz)) {
-          next = j;
+    // Reversed chain: start is at count-1. Jump to the furthest cell whose
+    // centre is still visible, which removes redundant stair-steps.
+    let anchorX = sx;
+    let anchorZ = sz;
+    let write = 0;
+    let i = count - 1;
+    while (i >= 0 && write < out.xs.length) {
+      let far = i;
+      // Scan from the goal end so the first visible cell is the furthest one,
+      // which is what makes the path string-pulled instead of grid-stepped.
+      for (let j = 0; j < i; j++) {
+        if (lineFree(anchorX, anchorZ, out.xs[j], out.zs[j])) {
+          far = j;
           break;
         }
       }
-      const id = raw[next];
-      out.push(MAP.navMinX + (id % W), MAP.navMinZ + ((id / W) | 0));
-      current = next;
+      out.xs[write] = out.xs[far];
+      out.zs[write] = out.zs[far];
+      anchorX = out.xs[far];
+      anchorZ = out.zs[far];
+      write += 1;
+      i = far - 1;
     }
+    out.n = write;
     return out;
-  };
+  }
 
-  return { W, H, findPath, lineClear, blocked };
+  function holdReachable(x, z) { return freeCell(x, z); }
+
+  return { blocked, cellOf, freeCell, findPath, holdReachable, cols: COLS, rows: ROWS };
 }
