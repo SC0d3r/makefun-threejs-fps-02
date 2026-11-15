@@ -13,14 +13,8 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   const flashMaterial = new THREE.SpriteMaterial({ map: makeFlashTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
   const flash = new THREE.Sprite(flashMaterial);
   flash.scale.setScalar(0.11);
-  // Sit on the muzzle's screen position: 32 mm higher made the flash float
-  // 25 px above the tracer's start in the still.
-  flash.position.set(0, 0.012, -0.612);
   flash.visible = false;
-  group.add(flash);
   const flashLight = new THREE.PointLight(PALETTE.sodium, 0, 3, 2);
-  flashLight.position.set(0, 0.018, -0.58);
-  group.add(flashLight);
   const rim = new THREE.DirectionalLight(PALETTE.cyan, 0.9);
   rim.position.set(-1.6, 0.9, -1.2);
   vmScene.add(rim);
@@ -174,8 +168,10 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
 
   front.add(flash);
   front.add(flashLight);
-  flash.position.set(0, 0.03, -0.655);
-  flashLight.position.set(0, 0.06, -0.6);
+  // Sit on the bore, the same point the tracer is built from, so the streak
+  // and the flash meet in the still and in play.
+  flash.position.set(0, 0.012, -0.612);
+  flashLight.position.set(0, 0.018, -0.58);
 
   // Two gloved hands that grip the charge while the plant is running. The
   // palms are deliberately narrow and sit outside the screen bezel so the
@@ -356,13 +352,16 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     state.muzzle = 0.05;
     kick = 1;
     audio.shot(weapon.sound);
-    // The tracer starts exactly at the viewmodel muzzle, so the streak lines up
-    // with the barrel on screen instead of hanging in front of the player.
+    // The tracer starts at the muzzle the player sees. The viewmodel is drawn
+    // with a 50 degree camera and the world with a 60 degree one, so the same
+    // point sits further from centre in the viewmodel; scale the screen offset
+    // by the tangent ratio or the streak starts beside the flash.
     group.updateMatrixWorld(true);
     const muzzleView = new THREE.Vector3();
     muzzleRef.getWorldPosition(muzzleView);
-    const mvx = muzzleView.x / -muzzleView.z;
-    const mvy = muzzleView.y / -muzzleView.z;
+    const vmScale = Math.tan(Math.PI / 6) / Math.tan(Math.PI * 25 / 180);
+    const mvx = muzzleView.x / -muzzleView.z * vmScale;
+    const mvy = muzzleView.y / -muzzleView.z * vmScale;
     let tdx = fx + rx * mvx + ux * mvy;
     let tdy = fy + uy * mvy;
     let tdz = fz + rz * mvx + uz * mvy;
