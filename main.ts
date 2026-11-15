@@ -3,7 +3,7 @@
 // vendored buildDossier helper the scorer runs. Standard library only; no
 // network, no bundler.
 // Usage: MAKEFUN_OUTPUT_DIR=out node main.ts
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-threejs.ts';
@@ -30,8 +30,9 @@ if (OUT === ROOT || OUT === '/') fail(`refusing to replace ${OUT}`);
 if (!existsSync(join(ROOT, 'game', 'index.html'))) fail('missing game/index.html');
 if (!existsSync(join(ROOT, 'screenshots'))) fail('missing screenshots/');
 
-rmSync(OUT, { recursive: true, force: true });
+// /output is a mount, so clear its contents, never the mount root.
 mkdirSync(OUT, { recursive: true });
+for (const name of readdirSync(OUT)) rmSync(join(OUT, name), { recursive: true, force: true });
 cpSync(join(ROOT, 'game'), join(OUT, 'game'), { recursive: true });
 cpSync(join(ROOT, 'screenshots'), join(OUT, 'screenshots'), { recursive: true });
 
