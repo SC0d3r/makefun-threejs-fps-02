@@ -39,8 +39,7 @@ export function createInput(state, canvas, onLockLost) {
       const result = canvas.requestPointerLock();
       if (result && typeof result.catch === 'function') result.catch(() => {});
     } catch (error) {
-      // A browser that refuses pointer lock still leaves the game playable by
-      // keyboard; the pause overlay explains the click-to-resume path.
+      // Keyboard still plays when pointer lock is refused.
     }
   }
   function unlock() {
@@ -50,7 +49,6 @@ export function createInput(state, canvas, onLockLost) {
   }
   function onLockChange() {
     locked = document.pointerLockElement === canvas;
-    // The buy menu is a pointer UI: losing lock there is expected, not a pause.
     const playable = state.mode === 'live' || state.mode === 'planted';
     if (!locked && state.started && !state.paused && !state.shot && playable) {
       state.paused = true;
@@ -60,7 +58,6 @@ export function createInput(state, canvas, onLockLost) {
   function onMouseDown(event) {
     if (event.button !== 0) return;
     if (!locked) {
-      // Any open overlay owns the pointer: cards and buttons must stay clickable.
       if (state.overlay) return;
       lock();
       return;

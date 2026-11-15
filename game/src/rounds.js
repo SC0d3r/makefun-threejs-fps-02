@@ -22,22 +22,31 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
   const displayTexture = new THREE.CanvasTexture(displayCanvas);
   displayTexture.colorSpace = THREE.SRGBColorSpace;
   let displayFuse = -1;
-  function paintDisplay(seconds) {
-    const whole = Math.max(0, Math.ceil(seconds));
-    if (whole === displayFuse) return;
-    displayFuse = whole;
+  function face(color, label, size) {
     displayCtx.fillStyle = '#170303';
     displayCtx.fillRect(0, 0, 256, 128);
-    displayCtx.fillStyle = '#ff3a2c';
-    displayCtx.font = 'bold 88px ui-monospace, Menlo, Consolas, monospace';
+    displayCtx.fillStyle = color;
+    displayCtx.font = `bold ${size}px ui-monospace, Menlo, Consolas, monospace`;
     displayCtx.textAlign = 'center';
     displayCtx.textBaseline = 'middle';
-    displayCtx.fillText(`0:${String(whole).padStart(2, '0')}`, 128, 66);
+    displayCtx.fillText(label, 128, 64);
     displayCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     for (let y = 0; y < 128; y += 6) displayCtx.fillRect(0, y, 256, 2);
     displayTexture.needsUpdate = true;
   }
-  paintDisplay(40);
+  // Idle face: the charge is carried or being planted, so no fuse is running.
+  function paintIdle() {
+    displayFuse = -1;
+    face('#c8842a', 'SAFE', 40);
+    screenLight.intensity = 0.35;
+  }
+  function paintDisplay(seconds) {
+    const whole = Math.max(0, Math.ceil(seconds));
+    if (whole === displayFuse) return;
+    displayFuse = whole;
+    face('#ff3a2c', `0:${String(whole).padStart(2, '0')}`, 88);
+    screenLight.intensity = 1.15;
+  }
   const screenBezel = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.14, 0.016), bezelMat);
   screenBezel.position.set(0, 0.11, 0.141);
   bomb.add(screenBezel);
@@ -47,6 +56,7 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
   const screenLight = new THREE.PointLight(0xff2a18, 1.15, 2.4, 2);
   screenLight.position.set(0, 0.2, 0.34);
   bomb.add(screenLight);
+  paintIdle();
   const keyMat = new THREE.MeshStandardMaterial({ color: 0x8a97a3, roughness: 0.5, metalness: 0.4 });
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 3; c++) {
@@ -114,6 +124,7 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
     bomb.visible = false;
     ring.visible = false;
     ring.scale.setScalar(0.1);
+    paintIdle();
   }
 
   function setBombYaw(yaw) {
@@ -125,7 +136,8 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
     bomb.visible = true;
     state.bomb.x = x;
     state.bomb.z = z;
-    paintDisplay(state.bomb.fuse || ROUND.fuse);
+    if (state.bomb.active) paintDisplay(state.bomb.fuse);
+    else paintIdle();
   }
 
   function startMatch() {
