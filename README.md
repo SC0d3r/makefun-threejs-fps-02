@@ -8,7 +8,9 @@ the B warehouse while you push a charge into one of the sites.
 
 Phase 1 built the map, movement, collision, hitscan gunplay, viewmodels, effects, HUD and render
 loop. Phase 2 adds the full match: nav-grid bots with sight and sound, the round and bomb state
-machine, the buy economy, grenades, procedural WebAudio and the staged screenshot scenes.
+machine, the buy economy, grenades, procedural WebAudio and the staged screenshot scenes. Phase 3
+is a correctness and polish pass over the whole entry: one state object, a fixed simulation step,
+pooled effects, a real buy loop and deterministic shot staging.
 
 ## Controls
 
@@ -17,7 +19,7 @@ machine, the buy economy, grenades, procedural WebAudio and the staged screensho
 | Mouse | Look (pointer lock) |
 | WASD | Move |
 | Shift | Walk |
-| C or Ctrl | Crouch |
+| Ctrl | Crouch |
 | Space | Jump |
 | Left mouse | Fire |
 | R | Reload |
@@ -25,7 +27,7 @@ machine, the buy economy, grenades, procedural WebAudio and the staged screensho
 | 3 / 4 | Frag / flash charge |
 | G | Throw the selected grenade |
 | B | Open or close the buy menu (buy phase only) |
-| E | Hold to plant at A or B; bots hold E to defuse |
+| E | Hold to plant at A or B; RUST bots defuse on their own |
 | Esc | Release pointer lock / pause |
 
 Weapons are the Marlin .45 sidearm (free), Kestrel SMG ($1250), Longshore AR ($2700) and
@@ -33,8 +35,8 @@ Breakwater 12g ($1800). Armor costs $650, a frag $300 and a flash $200. Everyone
 match with $1900. A round win pays $3000, a loss $1900, a kill $300 and a plant $300, capped at
 $9000. Buy phase is 12 seconds; the live round is 105 seconds; the fuse is 40 seconds.
 
-The first to five round wins takes the match. RUST.WARDEN and RUST.CINDER hold A and B with
-SMGs, and RUST.ROAMER patrols mid with the rifle. They hear footsteps and gunfire, search the
+The first to five round wins takes the match. RUST.WARDEN and RUST.SABLE hold A and B with
+SMGs, and RUST.CUTTER patrols mid with the rifle. They hear footsteps and gunfire, search the
 last known position, and defuse a planted charge if they reach it.
 
 ## Serve locally
@@ -80,14 +82,17 @@ these four, listed in `shots.json`:
 | `3-plant.jpg` | `?shot=plant&seed=1` | Crouched mid-plant at A, progress at 64% |
 | `4-buy.jpg` | `?shot=buy&seed=1` | Buy phase with the Longshore AR card focused |
 
-Each scene runs 90 fixed steps to settle the simulation, then writes every visible value
-directly and renders two frames before setting `window.__shotReady = true`. No timers, particles
-or random values continue after that point, so a seed always produces the same frame.
+Each scene calls the real `spawnRound()`, `startBuyPhase()`, `startLive()`, `completePlant()` or
+`stageCharge()` path, sets the player pose and score inputs, then freezes simulation before the
+first render. One zero-time weapon tick exposes the viewmodel and muzzle flash. No timers,
+particles or random values continue after that point, so a seed always produces the same frame.
+The buy frame keeps the live `buyClock`, real card states and a real `startBuyPhase()` result.
+After two rendered frames the page sets `window.__shotReady = true` for the capture harness.
 
 ## Layout
 
 ```text
-game/index.html       HUD DOM and CSS, buy cards, overlays, import map, favicon
+game/index.html       HUD DOM and CSS, buy cards, overlays, import map
 game/src/config.js    palette, weapon/grenade/economy tables, bot roles, map constants
 game/src/state.js     the single mutable state object
 game/src/input.js     keyboard, mouse, pointer lock, per-step edges
@@ -108,6 +113,19 @@ serve.ts              local static server
 shots.json            the four capture definitions
 ```
 
-The simulation runs at a fixed 60 Hz; rendering only copies state into the camera and renderer.
-All transient effects are preallocated at boot, textures are generated once from a seeded RNG,
-and the HUD caches its DOM writes. There are no external assets, fonts or network requests.
+The simulation runs at a fixed 60 Hz; rendering only copies state into the camera and renderer and
+counts the two-shot-ready frames. All transient effects are preallocated at boot, textures are
+generated once from a seeded RNG, and the HUD caches its DOM writes. There are no external assets,
+fonts or network requests.
+
+## Verification
+
+- All 15 `game/src/*.js` modules pass `node --input-type=module --check`.
+- `game/` holds 19 files (23 entries) and 2.3 MiB; `game/index.html` is 12,818 bytes.
+- Index plus modules is 136,341 bytes of source; dossier text is 137,692 bytes, under the
+  163,840-byte cap.
+- `MAKEFUN_OUTPUT_DIR=out node main.ts` writes a 609,479-byte canonical `dossier.json` with four
+  SHA-256-tagged screenshots and no vendored three.js text.
+- A port-8093 smoke test returns 200 for `/`, `src/main.js`, `src/bots.js`, `src/rounds.js`,
+  `src/shot.js` and `vendor/three/three.module.min.js`.
+
