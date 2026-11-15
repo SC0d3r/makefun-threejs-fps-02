@@ -1,18 +1,16 @@
-// Weapons own fire/reload/switch, the pooled grenades and the viewmodel scene.
-// Empty-mag handling lives first in fire(); a dry pull spends nothing and the
-// HUD crosshair spread is written from the same numbers used by the ray.
+// Weapons own fire, reload, switch and the viewmodel scene.
 import * as THREE from 'three';
 import { PALETTE, PLAYER, WEAPONS } from './config.js';
 import { clamp, damp, mulberry32 } from './util.js';
 import { makeFlashTexture } from './effects.js';
+import { createGrenades } from './grenade.js';
 
 export function createWeapon(state, scene, vmScene, map, bots, player, effects, audio, hud, input) {
   const rng = mulberry32(917);
+  const grenades = createGrenades(state, scene, map, bots, player, effects, audio, hud);
   const group = new THREE.Group();
   vmScene.add(group);
-  // The sprite sits on the bore cap, so it has to draw over the barrel instead
-  // of being clipped by it: depthTest off keeps the hot centre from turning into
-  // a black disc in the middle of the flash.
+  // The flash sprite draws over the barrel instead of being clipped by it.
   const flashMaterial = new THREE.SpriteMaterial({ map: makeFlashTexture(), transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
   const flash = new THREE.Sprite(flashMaterial);
   flash.scale.set(0.15, 0.15, 1);
@@ -25,12 +23,14 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   flashCross.renderOrder = 4;
   flashCross.visible = false;
   const flashLight = new THREE.PointLight(PALETTE.sodium, 0, 3, 2);
+  // Lights the floor and enemy, which the viewmodel scene cannot reach.
+  const worldFlash = new THREE.PointLight(PALETTE.sodium, 0, 12, 2);
+  scene.add(worldFlash);
   const rim = new THREE.DirectionalLight(PALETTE.cyan, 0.9);
   rim.position.set(-1.6, 0.9, -1.2);
   vmScene.add(rim);
 
-  // Dark, cool palette. The old light-grey rail and beige glove materials were
-  // what turned the viewmodel into a pile of pale crates on camera.
+  // Dark, cool viewmodel palette; pale materials read as crates on camera.
   const receiverMat = new THREE.MeshStandardMaterial({ color: 0x2b3238, metalness: 0.3, roughness: 0.5 });
   const polymerMat = new THREE.MeshStandardMaterial({ color: 0x3b4237, metalness: 0.05, roughness: 0.78 });
   const steelMat = new THREE.MeshStandardMaterial({ color: 0x6c777f, metalness: 0.55, roughness: 0.38 });
@@ -70,8 +70,7 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   part(0.008, 0.03, 0.06, 0.038, 0.02, -0.1, darkMetal);
   part(0.05, 0.018, 0.03, 0.01, 0.048, 0.13, railMat);
 
-  // Compact red-dot: the window faces the shooter, so the dot is visible in
-  // the frame and the housing reads as a sight rather than a scope tube.
+  // Compact red-dot whose window faces the shooter.
   part(0.034, 0.018, 0.08, 0, 0.076, -0.03, darkMetal);
   part(0.048, 0.05, 0.07, 0, 0.106, -0.035, darkMetal);
   part(0.054, 0.009, 0.056, 0, 0.136, -0.038, polymerMat);
@@ -85,8 +84,7 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   glint.position.set(-0.009, 0.117, 0.0022);
   group.add(glint);
 
-  // Barrel assembly. It lives in its own group so a shorter weapon can pull
-  // the whole front back without breaking the silhouette.
+  // Barrel group; a short weapon pulls the whole front back.
   const front = new THREE.Group();
   group.add(front);
   const barrel = tube(0.014, 0.34, 0, 0.012, -0.36, steelMat, front);
@@ -151,8 +149,7 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   const supportArm = part(0.048, 0.048, 0.24, -0.03, -0.2, -0.15, sleeveMat, -0.5, supportHand);
   supportArm.rotation.y = 0.2;
 
-  // Trigger hand on the camera side of the grip, with the same wide finger
-  // spacing so the knuckles separate from the receiver.
+  // Trigger hand on the camera side of the grip.
   part(0.05, 0.086, 0.07, -0.016, -0.168, 0.152, glove, 0.12);
   part(0.02, 0.072, 0.066, -0.04, -0.16, 0.152, gloveEdge, 0);
   for (let i = 0; i < 3; i++) {
@@ -174,18 +171,16 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   front.add(flash);
   front.add(flashCross);
   front.add(flashLight);
-  // Sit on the bore, the same point the tracer is built from, so the streak
-  // and the flash meet in the still and in play.
+  // Sit on the bore so the streak and flash meet.
   flash.position.set(0, 0.012, -0.612);
   flashCross.position.set(0, 0.012, -0.612);
-  flashLight.position.set(0, 0.018, -0.58);
+  flashLight.position.set(0, 0.03, -0.5);
 
   // Two gloved hands on the charge while the plant runs.
   const plantHands = new THREE.Group();
   for (const side of [-1, 1]) {
     const hand = new THREE.Group();
-    // Break the mirror: the right glove sits a little higher, closer and turned
-    // in, so the pair reads as two hands working instead of two clamps.
+    // Break the mirror so the two gloves read as hands, not clamps.
     hand.position.set(side * (0.088 + (side > 0 ? 0.006 : 0)), -0.178 + (side > 0 ? 0.012 : -0.008), -0.6 + (side > 0 ? 0.03 : -0.01));
     hand.rotation.set(-0.3 + (side > 0 ? 0.1 : -0.03), side * -0.6 + (side > 0 ? 0.12 : 0.03), side * (side > 0 ? 0.2 : 0.12));
     plantHands.add(hand);
@@ -210,8 +205,7 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.05, 0.05), sleeveMat);
     cuff.position.set(0, -0.056, 0.01);
     hand.add(cuff);
-    // The forearms angle outward and down instead of running toward the lens,
-    // which used to fill the bottom centre with a green faceted mass.
+    // Forearms angle outward and down instead of filling the bottom centre.
     const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.06, 0.2), sleeveMat);
     forearm.position.set(side * 0.055, -0.15, 0.16);
     forearm.rotation.x = -1.2;
@@ -243,8 +237,7 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     pump.visible = layout.pump;
     bolt.visible = layout.bolt;
     supportHand.visible = layout.handguard;
-    // A short weapon pulls the whole front group back so the muzzle stays in
-    // the frame and the hands stay on the handguard.
+    // A short weapon pulls the front group back.
     front.position.z = layout.longBarrel ? 0 : 0.15;
     hands.position.z = layout.longBarrel ? 0 : 0.11;
   }
@@ -259,14 +252,6 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     state.reload = 0;
     state.switchTimer = 0.18;
     applyLayout();
-  }
-
-  function selectGrenade(kind) {
-    if (kind === 'frag' && state.grenades.frag <= 0) return;
-    if (kind === 'flash' && state.grenades.flash <= 0) return;
-    state.grenade = kind;
-    state.reload = 0;
-    state.switchTimer = 0.12;
   }
 
   function reload() {
@@ -355,12 +340,10 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     state.recoilYaw += (rng() - 0.5) * weapon.recoil * 0.6;
     state.shake = Math.min(0.5, state.shake + weapon.recoil * 2.2);
     state.muzzle = 0.05;
+    worldFlash.position.set(ox + fx * 0.7, oy + fy * 0.7 - 0.04, oz + fz * 0.7);
     kick = 1;
     audio.shot(weapon.sound);
-    // The tracer starts at the muzzle the player sees. The viewmodel is drawn
-    // with a 50 degree camera and the world with a 60 degree one, so the same
-    // point sits further from centre in the viewmodel; scale the screen offset
-    // by the tangent ratio or the streak starts beside the flash.
+    // Scale the muzzle offset into the world camera.
     group.updateMatrixWorld(true);
     const muzzleView = new THREE.Vector3();
     muzzleRef.getWorldPosition(muzzleView);
@@ -382,129 +365,6 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     hud.hitmarker(anyHit);
     if (state.ammo[state.weapon].mag <= 0) hud.setPrompt('PRESS R TO RELOAD', 0.6);
     return true;
-  }
-
-  function throwGrenade() {
-    if (state.mode !== 'live' && state.mode !== 'planted') return;
-    if (!state.alive || !state.grenade) return;
-    if (state.grenades[state.grenade] <= 0) return;
-    const kind = state.grenade;
-    const item = projectiles.find((p) => !p.active);
-    if (!item) return;
-    state.grenades[kind] -= 1;
-    const pitch = state.pitch;
-    const yaw = state.yaw;
-    const cp = Math.cos(pitch);
-    const fx = -Math.sin(yaw) * cp;
-    const fy = Math.sin(pitch) + 0.18;
-    const fz = -Math.cos(yaw) * cp;
-    item.active = true;
-    item.kind = kind;
-    item.x = state.player.x + fx * 0.35;
-    item.y = state.player.y + eyeHeight() - 0.08;
-    item.z = state.player.z + fz * 0.35;
-    item.vx = fx * 9;
-    item.vy = fy * 9;
-    item.vz = fz * 9;
-    item.fuse = kind === 'frag' ? 0.9 : 1.2;
-    item.mesh.visible = true;
-    item.mesh.position.set(item.x, item.y, item.z);
-    item.mesh.material = kind === 'frag' ? fragMaterial : flashMaterialSolid;
-    state.grenade = null;
-    audio.toss();
-    hud.setPrompt(kind === 'frag' ? 'FRAG OUT' : 'FLASH OUT', 0.5);
-  }
-
-  const fragMaterial = new THREE.MeshStandardMaterial({ color: 0x2c343b, roughness: 0.6, metalness: 0.3 });
-  const flashMaterialSolid = new THREE.MeshStandardMaterial({ color: 0x9aa6ae, roughness: 0.4, metalness: 0.5, emissive: PALETTE.cyan, emissiveIntensity: 0.25 });
-  const projectiles = [];
-  for (let i = 0; i < 4; i++) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.13, 0.11), fragMaterial);
-    mesh.visible = false;
-    scene.add(mesh);
-    projectiles.push({ mesh, active: false, kind: 'frag', x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, fuse: 0 });
-  }
-
-  function detonate(item) {
-    item.active = false;
-    item.mesh.visible = false;
-    if (item.kind === 'frag') {
-      effects.explosion(item.x, 0.1, item.z);
-      audio.explosion();
-      state.shake = Math.min(0.8, state.shake + 0.6);
-      for (const bot of bots.squad) {
-        if (!bot.alive) continue;
-        const bx = bot.x;
-        const by = bot.y + 1.15;
-        const bz = bot.z;
-        const dx = bx - item.x;
-        const dy = by - item.y;
-        const dz = bz - item.z;
-        const distance = Math.hypot(dx, dy, dz);
-        if (distance > 5.2) continue;
-        const len = distance || 1;
-        if (map.blocked(item.x, item.y, item.z, dx / len, dy / len, dz / len, distance)) continue;
-        const amount = 130 - (Math.min(distance, 5) / 5) * 120;
-        bots.damage(bot, amount, 'body');
-      }
-      const pdx = state.player.x - item.x;
-      const pdz = state.player.z - item.z;
-      const pd = Math.hypot(pdx, pdz);
-      if (pd < 5 && !map.blocked(item.x, item.y + 0.1, item.z, pdx / (pd || 1), 0, pdz / (pd || 1), pd)) {
-        player.damage(40 - pd * 5, item.x, item.z);
-      }
-    } else {
-      effects.explosion(item.x, 0.1, item.z);
-      audio.flash();
-      bots.flash(item.x, item.z, 9, 2.5);
-      const fx = -Math.sin(state.yaw);
-      const fz = -Math.cos(state.yaw);
-      const dx = item.x - state.player.x;
-      const dz = item.z - state.player.z;
-      const distance = Math.hypot(dx, dz) || 1;
-      if (distance < 12 && (fx * dx + fz * dz) / distance > 0.15 && !map.blocked(state.player.x, state.player.y + 1.55, state.player.z, dx / distance, 0, dz / distance, distance)) {
-        state.flash = 1;
-      }
-    }
-  }
-
-  function updateProjectiles(dt) {
-    for (const item of projectiles) {
-      if (!item.active) continue;
-      item.fuse -= dt;
-      const px = item.x;
-      const py = item.y;
-      const pz = item.z;
-      item.vy -= 20 * dt;
-      item.x += item.vx * dt;
-      item.y += item.vy * dt;
-      item.z += item.vz * dt;
-      if (item.y < 0.12) {
-        item.y = 0.12;
-        item.vy = Math.abs(item.vy) * 0.38;
-        item.vx *= 0.7;
-        item.vz *= 0.7;
-      }
-      const dx = item.x - px;
-      const dy = item.y - py;
-      const dz = item.z - pz;
-      const distance = Math.hypot(dx, dy, dz);
-      if (distance > 0.0001) {
-        const hit = map.raycast(px, py, pz, dx / distance, dy / distance, dz / distance);
-        if (hit.t < distance - 0.02) {
-          item.x = px + (dx / distance) * Math.max(0, hit.t - 0.06);
-          item.y = py + (dy / distance) * Math.max(0, hit.t - 0.06);
-          item.z = pz + (dz / distance) * Math.max(0, hit.t - 0.06);
-          item.vx *= -0.35;
-          item.vz *= -0.35;
-          item.vy *= 0.3;
-        }
-      }
-      item.mesh.position.set(item.x, item.y, item.z);
-      item.mesh.rotation.x += dt * 7;
-      item.mesh.rotation.z += dt * 5;
-      if (item.fuse <= 0) detonate(item);
-    }
   }
 
   function update(dt) {
@@ -531,17 +391,17 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     if (state.mode === 'live' || state.mode === 'planted') {
       if (input.pressed.has('Digit1')) equip('pistol');
       if (input.pressed.has('Digit2') && state.primary) equip(state.primary);
-      if (input.pressed.has('Digit3')) selectGrenade('frag');
-      if (input.pressed.has('Digit4')) selectGrenade('flash');
+      if (input.pressed.has('Digit3')) grenades.select('frag');
+      if (input.pressed.has('Digit4')) grenades.select('flash');
       if (input.pressed.has('KeyR')) reload();
-      if (input.pressed.has('KeyG')) throwGrenade();
+      if (input.pressed.has('KeyG')) grenades.throwCharge();
       if (state.alive && !state.grenade) {
         const weapon = def();
         const wants = weapon.auto ? input.mouseDown : input.firePressed;
         if (wants) fire();
       }
     }
-    updateProjectiles(dt);
+    grenades.update(dt);
 
     kick = damp(kick, 0, 15, dt);
     reloadSway = damp(reloadSway, state.reload > 0 ? 1 : 0, 9, dt);
@@ -560,13 +420,12 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     flashCross.visible = state.muzzle > 0;
     flashMaterial.opacity = state.muzzle > 0 ? 0.95 : 0;
     flashCross.material.opacity = state.muzzle > 0 ? 0.7 : 0;
-    flashLight.intensity = state.muzzle > 0 ? 14 : 0;
+    flashLight.intensity = state.muzzle > 0 ? 40 : 0;
+    worldFlash.intensity = state.muzzle > 0 ? 22 : 0;
     plantHands.visible = group.visible && state.plant.active;
   }
 
-  // Used by the screenshot staging: after a shot, drop the recoil kick so the
-  // flash can be captured on the resting bore instead of a kicked-up one. The
-  // tracer is built from the resting pose, so both then share one point.
+  // Screenshot staging: drop the recoil kick so the flash sits on the bore.
   function settle() {
     kick = 0;
     reloadSway = 0;
@@ -584,12 +443,12 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     state.consecutive = 0;
     state.spread = 0;
     state.muzzle = 0;
-    for (const item of projectiles) { item.active = false; item.mesh.visible = false; }
+    grenades.reset();
     applyLayout();
   }
 
   function accuracy() { return state.shots > 0 ? Math.round((state.hits / state.shots) * 100) : 0; }
 
   applyLayout();
-  return { fire, reload, equip, selectGrenade, throwGrenade, update, resetRound, settle, accuracy, group };
+  return { fire, reload, equip, update, resetRound, settle, accuracy, group };
 }

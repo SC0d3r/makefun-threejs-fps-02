@@ -44,7 +44,7 @@ button:hover,button:focus-visible{border-color:var(--sodium);color:var(--sodium)
 .stat{display:grid;grid-template-columns:1fr auto;align-items:end;font-size:11px;color:#8fa0ad}
 .stat b{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:22px;color:var(--paper);line-height:1}
 .bar{grid-column:1/3;height:6px;background:#0a1119;border:1px solid #26313c}
-.bar i{display:block;height:100%;width:100%;background:#e6f3f8;box-shadow:0 0 7px #bfe9f266;transition:width .12s linear}
+.bar i{display:block;height:100%;width:100%;background:#e6f3f8;box-shadow:0 0 7px #bfe9f266}
 .bar.armor i{background:var(--cyan);width:0}
 #money{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px;color:var(--sodium);letter-spacing:.04em}
 #gun{position:absolute;right:22px;bottom:20px;text-align:right}
@@ -52,6 +52,13 @@ button:hover,button:focus-visible{border-color:var(--sodium);color:var(--sodium)
 #ammo{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:clamp(22px,2.8vw,34px);color:var(--paper);line-height:1.05}
 #ammo.empty{color:var(--danger)}
 #fireMode{font-size:9px;color:var(--cyan);letter-spacing:.22em}
+#utility{display:flex;gap:10px;justify-content:flex-end;margin-top:5px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;color:#6f808d;text-transform:none;letter-spacing:.02em}
+#utility .on{color:var(--sodium)}
+#flashChip.on{color:var(--cyan)}
+#board{position:absolute;left:22px;top:180px;width:176px;padding:5px 7px;background:#070d16b8;border-left:2px solid var(--cyan);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9px;color:#8fa0ad;text-transform:none;letter-spacing:.02em}
+#board b{display:block;color:var(--cyan);letter-spacing:.14em;margin-bottom:3px}
+#board div{display:grid;grid-template-columns:1fr auto auto;gap:7px;padding:2px 0;border-top:1px solid #1b242d}
+#board i{font-style:normal;color:var(--paper)}
 #prompt{position:absolute;left:50%;bottom:74px;transform:translateX(-50%);font-size:clamp(10px,1.15vw,14px);color:var(--sodium);letter-spacing:.16em;white-space:nowrap;min-height:1em;text-shadow:0 1px 2px #000c}
 #crosshair{position:absolute;left:50%;top:50%;width:0;height:0;--gap:10px}
 #crosshair i{position:absolute;background:#000;box-shadow:0 0 0 1px #fff, 0 0 3px #000;display:block}
@@ -137,12 +144,13 @@ h1 em{font-style:normal;color:var(--sodium)}
     <div id="clock"><div id="timer">1:45</div><div id="bombState">CHARGE CARRIED</div></div>
     <div id="score"><span>YOU</span><b id="scoreYou">0</b><i>:</i><b id="scoreRust">0</b><span>RUST</span></div>
   </header>
+  <div id="board"><b>SCOREBOARD</b><div><span>TIDE</span><i id="boardK">0</i><i id="boardM">$1,900</i></div><div><span>WARDEN</span><i>SMG</i><i>RUST</i></div><div><span>SABLE</span><i>SMG</i><i>RUST</i></div><div><span>CUTTER</span><i>RIFLE</i><i>RUST</i></div></div>
   <aside id="vitals">
     <div class="stat"><label>HEALTH</label><b id="health">100</b><div class="bar"><i id="healthBar"></i></div></div>
     <div class="stat"><label>ARMOR</label><b id="armor">0</b><div class="bar armor"><i id="armorBar"></i></div></div>
     <div id="money">$ 1,900</div>
   </aside>
-  <aside id="gun"><div id="weaponName">MARLIN .45</div><div id="ammo">12 / 48</div><div id="fireMode">SEMI</div></aside>
+  <aside id="gun"><div id="weaponName">MARLIN .45</div><div id="ammo">12 / 48</div><div id="fireMode">SEMI</div><div id="utility"><span id="fragChip">Frag x0</span><span id="flashChip">Flash x0</span></div></aside>
   <div id="prompt"></div>
   <div id="crosshair"><i></i><i></i><i></i><i></i><i></i></div>
   <div id="hitmarker">×</div>

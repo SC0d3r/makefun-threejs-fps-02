@@ -1,6 +1,4 @@
-// Round flow, economy and the bomb. startBuyPhase() is the only way into a buy
-// phase, completePlant() is the only way a charge becomes armed, and both the
-// live game and shot staging call those same functions.
+// Round flow, economy and the bomb; live play and staging share these calls.
 import * as THREE from 'three';
 import { ECONOMY, MAP, PALETTE, ROUND, WEAPONS } from './config.js';
 import { clamp, lerp } from './util.js';
@@ -16,8 +14,7 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
   const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.32), bezelMat);
   bezel.position.y = 0.205;
   bomb.add(bezel);
-  // Countdown display on the front face. The old screen sat on the top face
-  // and read as a pink bar from the plant camera; a canvas gives real digits.
+  // Countdown display on the charge face, drawn as canvas digits.
   const displayCanvas = document.createElement('canvas');
   displayCanvas.width = 256;
   displayCanvas.height = 128;
@@ -70,10 +67,7 @@ export function createRounds(state, scene, map, player, bots, weapon, hud, audio
     cable.rotation.y = 0.4 - i * 0.7;
     bomb.add(cable);
   }
-  // Demolition charge padding on the lid. Without it the flat lid plus the old
-  // arch of cable read as a lunchbox handle from the plant camera.
-  // Contact shadow so the charge sits on the deck instead of hovering in its
-  // own red glow.
+  // Charge padding and contact shadow so it sits on the deck.
   const contact = new THREE.Mesh(new THREE.CircleGeometry(0.3, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false }));
   contact.rotation.x = -Math.PI / 2;
   contact.position.y = 0.012;

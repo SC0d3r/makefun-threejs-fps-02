@@ -57,6 +57,8 @@ export function createShot(state, deps) {
     state.promptTime = 0;
     state.buyOpen = false;
     hud.setOverlay(null);
+    state.grenades.frag = 1;
+    state.grenades.flash = 1;
   }
 
   function cover() {

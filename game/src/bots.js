@@ -1,9 +1,8 @@
-// Three RUST defenders. Perception is FOV + wall rays, aim is rate-limited and
-// gated by a reaction timer, and every shot goes through player.damage() so a
-// bot that is visible in the kill feed is also a real threat.
+// Three RUST defenders with FOV and wall-ray perception.
 import * as THREE from 'three';
 import { MAP, PALETTE, ECONOMY } from './config.js';
 import { clamp, mulberry32, rayAABB, angleDelta } from './util.js';
+import { createHearing } from './hearing.js';
 
 const ROUTES = {
   anchorA: [[-8, -18], [-16, -16], [-19, -12], [-13, -7], [-8, -4], [-3, -5], [-8, -4], [-13, -7], [-19, -12], [-16, -16]],
@@ -16,6 +15,7 @@ const SPAWNS = [[-2, -20], [0, -20], [2, -20]];
 export function createBots(state, scene, map, nav, player, hud, audio, effects) {
   const rng = mulberry32(4242);
   const squad = [];
+  const hearing = createHearing(state, squad);
   const scratch = { hit: false, bot: null, zone: '', t: Infinity, x: 0, y: 0, z: 0 };
   const vestMat = new THREE.MeshStandardMaterial({ color: PALETTE.rust, roughness: 0.66, metalness: 0.18, emissive: PALETTE.rust, emissiveIntensity: 0.22 });
   const plateMat = new THREE.MeshStandardMaterial({ color: 0x6e3620, roughness: 0.5, metalness: 0.3, emissive: PALETTE.rust, emissiveIntensity: 0.22 });
@@ -578,20 +578,6 @@ export function createBots(state, scene, map, nav, player, hud, audio, effects) 
     return scratch;
   }
 
-  function hear(x, z, radius) {
-    for (const bot of squad) {
-      if (!bot.alive) continue;
-      if (Math.hypot(bot.x - x, bot.z - z) > radius) continue;
-      bot.lastHeardX = x;
-      bot.lastHeardZ = z;
-      bot.lastHeardAt = state.time;
-      if (bot.state !== 'engage' && bot.state !== 'defuse') {
-        bot.state = 'investigate';
-        bot.repath = 0;
-      }
-    }
-  }
-
   function flash(x, z, radius, duration) {
     for (const bot of squad) {
       if (!bot.alive) continue;
@@ -607,7 +593,7 @@ export function createBots(state, scene, map, nav, player, hud, audio, effects) 
 
   function allDead() { return squad.every((bot) => !bot.alive); }
 
-  // Shot staging uses the real spawned squad; it only places a body and pose.
+  // Shot staging uses the real squad; only pose is written.
   function stage(bot, x, z, yaw, pose = 0) {
     bot.x = x;
     bot.z = z;
@@ -622,8 +608,7 @@ export function createBots(state, scene, map, nav, player, hud, audio, effects) 
     bot.group.rotation.set(0, yaw, 0);
     bot.group.scale.y = 1;
     bot.gun.visible = bot.alive;
-    // Mirror the carry for SABLE and tie the tilt to the lean, so a staged pair
-    // never stands in two identical poses.
+    // Mirror SABLE's carry so a staged pair never stands in identical poses.
     const mirror = bot.name === 'SABLE' ? -1 : 1;
     bot.gun.rotation.set(0.1 + pose * 0.22, mirror * (1.32 + pose * 0.25), 0.14 + pose * 0.3);
     bot.legL.rotation.x = pose;
@@ -635,5 +620,5 @@ export function createBots(state, scene, map, nav, player, hud, audio, effects) 
     updateParts(bot);
   }
 
-  return { squad, spawnRound, activate, update, damage, raycast, hear, flash, allDead, stage };
+  return { squad, spawnRound, activate, update, damage, raycast, hear: hearing.emit, flash, allDead, stage };
 }

@@ -1,5 +1,4 @@
-// DOM readouts and overlays. Everything shown here is copied from the state
-// object; the only writes back are UI choices (buy card clicks, overlay buttons).
+// DOM readouts and overlays, all copied from state.
 import { BUY, MAP, ROUND, WEAPONS } from './config.js';
 import { clamp, fmtClock, fmtMoney, fmtTime } from './util.js';
 
@@ -9,6 +8,8 @@ export function createHud(state) {
     timer: byId('timer'), bomb: byId('bombState'), you: byId('scoreYou'), rust: byId('scoreRust'),
     health: byId('health'), healthBar: byId('healthBar'), armor: byId('armor'), armorBar: byId('armorBar'),
     money: byId('money'), weaponName: byId('weaponName'), ammo: byId('ammo'), fireMode: byId('fireMode'),
+    fragChip: byId('fragChip'), flashChip: byId('flashChip'),
+    boardK: byId('boardK'), boardM: byId('boardM'),
     prompt: byId('prompt'), crosshair: byId('crosshair'), hitmarker: byId('hitmarker'),
     feed: byId('feed'), vignette: byId('vignette'), flash: byId('flash'), callout: byId('callout'),
     start: byId('start'), buy: byId('buy'), round: byId('round'), match: byId('match'), pause: byId('pause'),
@@ -177,6 +178,12 @@ export function createHud(state) {
       setText(el.fireMode, weapon.mode);
     }
     el.ammo.classList.toggle('empty', !state.grenade && state.ammo[state.weapon].mag <= 0);
+    setText(el.fragChip, `Frag x${state.grenades.frag}`);
+    setText(el.flashChip, `Flash x${state.grenades.flash}`);
+    el.fragChip.classList.toggle('on', state.grenades.frag > 0);
+    el.flashChip.classList.toggle('on', state.grenades.flash > 0);
+    setText(el.boardK, String(state.kills));
+    setText(el.boardM, fmtMoney(state.money));
 
     const prompt = state.promptTime > 0 ? state.promptText : basePrompt();
     setText(el.prompt, prompt);

@@ -1,7 +1,5 @@
 import * as THREE from 'three';
-// Boot, fixed-step simulation and the two-pass render. Order matters: config,
-// state, input, util, nav, bots, rounds, map, player, weapon, effects, HUD,
-// audio, shot - the dossier then reads match logic before presentation.
+// Boot, fixed-step simulation and two-pass render; imports follow dossier order.
 import { PALETTE } from './config.js';
 import { createState } from './state.js';
 import { createInput } from './input.js';

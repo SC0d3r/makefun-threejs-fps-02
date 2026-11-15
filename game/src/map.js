@@ -1,6 +1,4 @@
-// The map owns geometry, generated textures, lights and the single list of
-// solid AABBs. Bullets, vision, grenades and movement all consume that list so
-// nothing can see or shoot through a wall that the player cannot walk through.
+// The map owns geometry, textures, lights and the solid AABB list.
 import * as THREE from 'three';
 import { MAP, PALETTE } from './config.js';
 import { mulberry32, rayAABB } from './util.js';
@@ -168,12 +166,10 @@ export function createMap(scene, anisotropy = 8) {
     floor.receiveShadow = true;
     group.add(floor);
 
-    // A roof closes the hall: without it every lamp fixture hangs against black
-    // sky and the top of each frame reads as a hole in the level.
+    // A roof closes the hall so lamp fixtures never hang against black sky.
     box(0, 6, 0, 64, 0.2, 48, mats.dark, false, false);
 
-    // Perimeter and lane walls. The two 4 m lane gaps at z=0 and the two north
-    // doors are the only ways between the spawn, the cross and the sites.
+    // Perimeter and lane walls; four gaps link spawn, cross and sites.
     box(0, 0, -24, 64, 6, 0.6, mats.wall);
     box(0, 0, 24, 64, 6, 0.6, mats.wall);
     box(-32, 0, 0, 0.6, 6, 48, mats.wall);
@@ -205,8 +201,7 @@ export function createMap(scene, anisotropy = 8) {
     }
     for (const p of [[0, 8], [-2, 0], [2, -6], [0, -12]]) box(p[0], 0, p[1], 0.8, 3, 0.8, mats.concrete);
 
-    // Lane chokepoints: containers force a slalom but leave a
-    // readable lane on both sides of each block.
+    // Lane chokepoints force a slalom but leave both sides readable.
     const containers = [
       [-27, 6, 2.4, 6, mats.rust], [-27, 0, 6, 2.4, mats.steel], [-20, -16, 6, 2.4, mats.rust],
       [23, 6, 2.4, 6, mats.steel], [27, -2, 2.4, 6, mats.rust], [20, -16, 6, 2.4, mats.steel],
@@ -215,7 +210,7 @@ export function createMap(scene, anisotropy = 8) {
     for (const [x, z, w, d, mat] of containers) {
       box(x, 0, z, w, 2.4, d, mat);
       box(x, 2.4, z, w * 0.96, 0.08, d * 0.96, mats.dark, false, false);
-      // Dark corner posts and top/bottom trim break up the largest flat faces.
+      // Corner posts and trim break up flat faces.
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(x + sx * (w / 2 - 0.04), 0, z + sz * (d / 2 - 0.04), 0.08, 2.4, 0.08, mats.trim, false, false);
       box(x, 0, z, w + 0.01, 0.07, d + 0.01, mats.trim, false, false);
       box(x, 2.3, z, w + 0.01, 0.07, d + 0.01, mats.trim, false, false);
@@ -275,8 +270,7 @@ export function createMap(scene, anisotropy = 8) {
 
   function addLights() {
     scene.add(new THREE.HemisphereLight(0x3a566f, 0x18202a, 2.7));
-    // A dim fill so walls that face away from the moon are not pure black in a
-    // still; the value stays below the fog line so the mood holds.
+    // Dim fill keeps walls above black without breaking the fog line.
     scene.add(new THREE.AmbientLight(0x2b3b49, 0.5));
     const moon = new THREE.DirectionalLight(0x9db7d8, 2.4);
     moon.position.set(-18, 28, 12);
@@ -291,8 +285,7 @@ export function createMap(scene, anisotropy = 8) {
     moon.shadow.bias = -0.0007;
     moon.shadow.normalBias = 0.025;
     scene.add(moon);
-    // Camera-side fill so the shadowed faces of the containers and pillars do
-    // not fall to pure black in the screenshots; no shadow, low intensity.
+    // Camera-side fill keeps shadowed faces off pure black in the stills.
     const fill = new THREE.DirectionalLight(0x8aa6c4, 1.25);
     fill.position.set(16, 9, 26);
     scene.add(fill);
