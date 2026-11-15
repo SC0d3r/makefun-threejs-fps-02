@@ -14,6 +14,7 @@ import { createPlayer } from './player.js';
 import { createWeapon } from './weapon.js';
 import { createEffects } from './effects.js';
 import { createHud } from './hud.js';
+import { createRadar } from './minimap.js';
 import { createAudio } from './audio.js';
 import { createShot, readShot } from './shot.js';
 
@@ -61,6 +62,7 @@ const hud = createHud(state);
 const input = createInput(state, canvas, () => hud.setOverlay('pause'));
 const player = createPlayer(state, camera, map, input, audio);
 const bots = createBots(state, scene, map, nav, player, hud, audio, effects);
+const radar = createRadar(document.getElementById('radar'), map, state, bots);
 const weapon = createWeapon(state, scene, vmScene, map, bots, player, effects, audio, hud, input);
 const rounds = createRounds(state, scene, map, player, bots, weapon, hud, audio, effects, input);
 const shooter = createShot(state, { player, weapon, bots, rounds, hud });
@@ -109,6 +111,7 @@ function step() {
 function render() {
   player.applyCamera();
   hud.update(FIXED);
+  radar.update(FIXED);
   renderer.clear(true, true, true);
   renderer.render(scene, camera);
   renderer.clearDepth();

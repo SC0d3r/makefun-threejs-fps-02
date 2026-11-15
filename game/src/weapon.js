@@ -10,9 +10,13 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   const rng = mulberry32(917);
   const group = new THREE.Group();
   vmScene.add(group);
-  const flashMaterial = new THREE.SpriteMaterial({ map: makeFlashTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+  // The sprite sits on the bore cap, so it has to draw over the barrel instead
+  // of being clipped by it: depthTest off keeps the hot centre from turning into
+  // a black disc in the middle of the flash.
+  const flashMaterial = new THREE.SpriteMaterial({ map: makeFlashTexture(), transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
   const flash = new THREE.Sprite(flashMaterial);
   flash.scale.setScalar(0.11);
+  flash.renderOrder = 4;
   flash.visible = false;
   const flashLight = new THREE.PointLight(PALETTE.sodium, 0, 3, 2);
   const rim = new THREE.DirectionalLight(PALETTE.cyan, 0.9);
@@ -557,6 +561,14 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
     plantHands.visible = group.visible && state.plant.active;
   }
 
+  // Used by the screenshot staging: after a shot, drop the recoil kick so the
+  // flash can be captured on the resting bore instead of a kicked-up one. The
+  // tracer is built from the resting pose, so both then share one point.
+  function settle() {
+    kick = 0;
+    reloadSway = 0;
+  }
+
   function resetRound() {
     for (const id of ['pistol', 'smg', 'rifle', 'shotgun']) {
       state.ammo[id].mag = WEAPONS[id].mag;
@@ -576,5 +588,5 @@ export function createWeapon(state, scene, vmScene, map, bots, player, effects, 
   function accuracy() { return state.shots > 0 ? Math.round((state.hits / state.shots) * 100) : 0; }
 
   applyLayout();
-  return { fire, reload, equip, selectGrenade, throwGrenade, update, resetRound, accuracy, group };
+  return { fire, reload, equip, selectGrenade, throwGrenade, update, resetRound, settle, accuracy, group };
 }

@@ -71,7 +71,8 @@ button:hover,button:focus-visible{border-color:var(--sodium);color:var(--sodium)
 @keyframes feedin{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:none}}
 #vignette{position:absolute;inset:0;opacity:0;background:radial-gradient(ellipse at center,#0000 52%,#e5483c66 78%,#830b0bd9 100%);transition:opacity .1s}
 #flash{position:absolute;inset:0;background:#fff;opacity:0;transition:opacity .12s}
-#callout{position:absolute;left:22px;top:96px;font-size:12px;color:var(--cyan);opacity:0;transition:opacity .2s;border-left:2px solid var(--cyan);padding-left:8px}
+#radar{position:absolute;left:22px;top:62px;width:148px;height:111px;background:#050a10cc;border:1px solid #3c4a56;box-shadow:0 2px 8px #000c}
+#callout{position:absolute;left:22px;top:184px;font-size:12px;color:var(--cyan);opacity:0;transition:opacity .2s;border-left:2px solid var(--cyan);padding-left:8px}
 #callout.on{opacity:1}
 .overlay{position:fixed;inset:0;display:none;place-items:center;background:#050a11c9;z-index:10}
 .overlay.on{display:grid}
@@ -130,6 +131,7 @@ h1 em{font-style:normal;color:var(--sodium)}
 <body>
 <canvas id="view"></canvas>
 <div id="hud">
+  <canvas id="radar"></canvas>
   <header id="top">
     <div id="brand"><b>QUAY 9</b><small>DRY DOCK 04</small></div>
     <div id="clock"><div id="timer">1:45</div><div id="bombState">CHARGE CARRIED</div></div>

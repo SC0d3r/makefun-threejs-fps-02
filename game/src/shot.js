@@ -119,6 +119,7 @@ export function createShot(state, deps) {
     state.hits = 0;
     state.consecutive = 0;
     if (weapon.fire()) {
+      weapon.settle();
       state.shotTimer = 0;
       state.consecutive = 0;
       // Keep the staged reticle tight; a 22 px spread gap read as a broken
