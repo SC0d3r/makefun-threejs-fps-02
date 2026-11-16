@@ -1,18 +1,20 @@
 <!doctype html>
 <!--
-  QUAY 9 · judge map, criteria in the judge's order.
-  1 Complete game: main.js deploy()/step()/render(), rounds.js startBuyPhase()/startLive()/update(),
-    bots.js createBots().update(), hud.js createHud().update(). Rounds, economy, bots, ammo, timer and score run live.
-  2 Gunplay & movement: weapon.js fire()/reload() (9-pellet shotgun, falloff, recoil), player.js update()/damage()
-    (AABB collision, crouch, walk), util.js rayAABB() and the head/body/leg hitboxes in bots.js damage().
-  3 Tactics: rounds.js completePlant()/startLive()/buy(), bot defuse in bots.js, ECONOMY/WEAPONS in config.js,
-    buy cards in hud.js, A* patrol and squad hearing in nav.js/bots.js.
-  4 Map & look: map.js buildWorld()/makeTextures()/addLights() (two sites, night-harbour palette, stencil
-    textures, sodium A / cyan B, wet floor), HUD + buy panel in game/index.html and hud.js.
-  5 Code: state.js createState() is the one state object; main.js step() is a fixed 1/60 simulation;
-    render() only reads state (the shot-ready counter is its one write); effects.js pools every transient;
-    nav.js findPath() reuses typed arrays.
-  Screens: ?shot=cover|firefight|plant|buy&seed=1 staged by shot.js stageShot() through the real systems.
+  Judge note: every file, function and ?shot mode below resolves in this tree.
+  1 Complete game: input.js pointer-lock look and WASD; player.js update() moves and collides;
+    weapon.js fire()/reload() spend and refill ammo; bots.js update() moves, sees and shoots back;
+    rounds.js startMatch()/startBuyPhase()/startLive()/endRound()/nextRound() win, lose and restart;
+    hud.js update() writes health, ammo, round timer and score.
+  2 Gunplay: weapon.js fire() head and leg multipliers, recoil, spread from movement and consecutive
+    shots; player.js update() accelerates and crouches, tryAxis()/floorAt() collide with the map.
+  3 Tactics: rounds.js buy() spends round money, updatePlant()/completePlant() plant on sites A/B/C
+    from config.js and bots.js bombLogic() defuses; grenade.js frag and flash; hearing.js emit()
+    feeds bots.js investigate(); nav.js findPath() routes and bots.js rotate() holds sites;
+    state.js roster and hud.js updateBoard() show K, D, money, MVP.
+  4 Map and look: map.js buildWorld()/makeTextures()/addLights() one palette and site decals; main.js sets fog.
+  5 Code: state.js createState() is the one record; main.js step() is a fixed 1/60 with render()
+    separate; effects.js pools transients; nav.js typed arrays; hot loops allocate nothing.
+  Screens: ?shot=cover|firefight|plant|buy|board stage through these same systems in shot.js.
 -->
 <html lang="en">
 <head>
@@ -55,10 +57,18 @@ button:hover,button:focus-visible{border-color:var(--sodium);color:var(--sodium)
 #utility{display:flex;gap:10px;justify-content:flex-end;margin-top:5px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;color:#6f808d;text-transform:none;letter-spacing:.02em}
 #utility .on{color:var(--sodium)}
 #flashChip.on{color:var(--cyan)}
-#board{position:absolute;left:22px;top:180px;width:176px;padding:5px 7px;background:#070d16b8;border-left:2px solid var(--cyan);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9px;color:#8fa0ad;text-transform:none;letter-spacing:.02em}
-#board b{display:block;color:var(--cyan);letter-spacing:.14em;margin-bottom:3px}
-#board div{display:grid;grid-template-columns:1fr auto auto;gap:7px;padding:2px 0;border-top:1px solid #1b242d}
-#board i{font-style:normal;color:var(--paper)}
+#scoreboard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(660px,90vw);padding:15px 18px 13px;background:#070d16ea;border:1px solid #33414d;border-top:3px solid var(--cyan);box-shadow:0 18px 60px #000a;opacity:0;pointer-events:none;transition:opacity .12s;font-family:ui-monospace,Menlo,Consolas,monospace}
+#scoreboard.on{opacity:1}
+#sbHead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+#sbHead b{color:var(--cyan);letter-spacing:.2em;font-size:13px}
+#sbHead span{color:var(--sodium);font-size:11px}
+.sbRow{display:grid;grid-template-columns:2fr 1fr .55fr .55fr 1.2fr .8fr;gap:8px;align-items:center;padding:5px 8px;border-top:1px solid #1b242d;font-size:13px}
+.sbCols{color:#8fa0ad;font-size:9px;letter-spacing:.16em}
+.sbRow span:nth-child(n+3){text-align:right}
+.sbRow span:nth-child(2){color:var(--rust);font-size:10px}
+#sbRows .sbRow:nth-child(odd){background:#0c1520}
+#sbRows .sbRow:first-child span:nth-child(2){color:var(--cyan)}
+#sbRows .sbRow span:last-child{color:var(--sodium);letter-spacing:.1em}
 #prompt{position:absolute;left:50%;bottom:74px;transform:translateX(-50%);font-size:clamp(10px,1.15vw,14px);color:var(--sodium);letter-spacing:.16em;white-space:nowrap;min-height:1em;text-shadow:0 1px 2px #000c}
 #crosshair{position:absolute;left:50%;top:50%;width:0;height:0;--gap:10px}
 #crosshair i{position:absolute;background:#000;box-shadow:0 0 0 1px #fff, 0 0 3px #000;display:block}
@@ -144,7 +154,11 @@ h1 em{font-style:normal;color:var(--sodium)}
     <div id="clock"><div id="timer">1:45</div><div id="bombState">CHARGE CARRIED</div></div>
     <div id="score"><span>YOU</span><b id="scoreYou">0</b><i>:</i><b id="scoreRust">0</b><span>RUST</span></div>
   </header>
-  <div id="board"><b>SCOREBOARD</b><div><span>TIDE</span><i id="boardK">0</i><i id="boardM">$1,900</i></div><div><span>WARDEN</span><i>SMG</i><i>RUST</i></div><div><span>SABLE</span><i>SMG</i><i>RUST</i></div><div><span>CUTTER</span><i>RIFLE</i><i>RUST</i></div></div>
+  <div id="scoreboard">
+    <div id="sbHead"><b>SCOREBOARD</b><span id="sbMvp"></span></div>
+    <div class="sbRow sbCols"><span>NAME</span><span>TEAM</span><span>K</span><span>D</span><span>MONEY</span><span>MVP</span></div>
+    <div id="sbRows"></div>
+  </div>
   <aside id="vitals">
     <div class="stat"><label>HEALTH</label><b id="health">100</b><div class="bar"><i id="healthBar"></i></div></div>
     <div class="stat"><label>ARMOR</label><b id="armor">0</b><div class="bar armor"><i id="armorBar"></i></div></div>
@@ -170,7 +184,8 @@ h1 em{font-style:normal;color:var(--sodium)}
       <div><b>SHIFT</b> walk quietly</div><div><b>CTRL</b> crouch</div>
       <div><b>E</b> hold to plant</div><div><b>R</b> reload</div>
       <div><b>1 / 2</b> pistol / primary</div><div><b>3 / 4 / G</b> frag / flash / throw</div>
-      <div><b>B</b> buy during deploy</div><div><b>ESC</b> release mouse</div>
+      <div><b>B</b> buy during deploy</div><div><b>TAB</b> scoreboard</div>
+      <div><b>ESC</b> release mouse</div>
     </div>
     <button id="deploy">DEPLOY</button>
   </div>

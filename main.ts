@@ -1,4 +1,4 @@
-// QUAY 9 — make.fun entry builder. It copies the playable tree and the four
+// QUAY 9: make.fun entry builder. It copies the playable tree and the four
 // renders into the output directory, then writes dossier.json with the exact
 // vendored buildDossier helper the scorer runs. Standard library only; no
 // network, no bundler.
