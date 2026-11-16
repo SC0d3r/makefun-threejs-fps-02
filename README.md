@@ -7,8 +7,8 @@
 **Hold the tide. Plant the charge.**
 
 QUAY 9 is an original night-harbour tactical FPS built with three.js 0.187.0. You are TIDE, a
-solo attacker on a decommissioned tidal drydock. Three RUST security bots hold the A dry dock and
-the B warehouse while you push a charge into one of the sites.
+solo attacker on a decommissioned tidal drydock. Three RUST security bots hold the A dry dock, the
+B warehouse and the C tunnel while you push a charge into one of the three sites.
 
 Phase 1 built the map, movement, collision, hitscan gunplay, viewmodels, effects, HUD and render
 loop. Phase 2 adds the full match: nav-grid bots with sight and sound, the round and bomb state
@@ -31,7 +31,8 @@ pooled effects, a real buy loop and deterministic shot staging.
 | 3 / 4 | Frag / flash charge |
 | G | Throw the selected grenade |
 | B | Open or close the buy menu (buy phase only) |
-| E | Hold to plant at A or B; RUST bots defuse on their own |
+| Tab | Hold for the per-player scoreboard |
+| E | Hold to plant at A, B or C; RUST bots defuse on their own |
 | Esc | Release pointer lock / pause |
 
 Weapons are the Marlin .45 sidearm (free), Kestrel SMG ($1250), Longshore AR ($2700) and
@@ -41,7 +42,8 @@ $9000. Buy phase is 12 seconds; the live round is 105 seconds; the fuse is 40 se
 
 The first to five round wins takes the match. RUST.WARDEN and RUST.SABLE hold A and B with
 SMGs, and RUST.CUTTER patrols mid with the rifle. They hear footsteps and gunfire, search the
-last known position, and defuse a planted charge if they reach it.
+last known position, and defuse a planted charge if they reach it; after a plant one defender
+rotates to the live site, including C.
 
 ## Serve locally
 
