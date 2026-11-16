@@ -1,46 +1,43 @@
-// QUAY 9: make.fun entry builder. It copies the playable tree and the four
-// renders into the output directory, then writes dossier.json with the exact
-// vendored buildDossier helper the scorer runs. Standard library only; no
-// network, no bundler.
+// QUAY 9: competition entry for make.fun's threejs-fps-02 bounty.
 // Usage: MAKEFUN_OUTPUT_DIR=out node main.ts
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-threejs.ts';
 
-const ROOT = fileURLToPath(new URL('.', import.meta.url));
-const DEST = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-const OUT = resolve(ROOT, DEST);
+const root = resolve(fileURLToPath(new URL('.', import.meta.url)));
+const outDir = resolve(root, process.env.MAKEFUN_OUTPUT_DIR || '/output');
 
-// The caps come from the bounty gate. Only text_max_bytes shapes the dossier
-// bytes; the other caps refuse an oversized entry rather than trimming it.
-const CAPS = {
+const caps = {
   text_max_bytes: 163840,
   screenshots: { max: 4, max_bytes: 262144 },
   game_max_files: 993,
   game_max_bytes: 50331648,
 };
 
-function fail(message: string): never {
-  process.stderr.write(`QUAY 9 build: ${message}\n`);
+try {
+  if (outDir === root || outDir === '/') {
+    throw new Error(`refusing to use ${outDir} as the output directory`);
+  }
+  if (!existsSync(join(root, 'game/index.html'))) {
+    throw new Error(`missing game/index.html in ${root}`);
+  }
+  if (!existsSync(join(root, 'screenshots'))) {
+    throw new Error(`missing screenshots/ in ${root}`);
+  }
+
+  mkdirSync(outDir, { recursive: true });
+  for (const name of readdirSync(outDir)) {
+    rmSync(join(outDir, name), { recursive: true, force: true });
+  }
+
+  cpSync(join(root, 'game'), join(outDir, 'game'), { recursive: true });
+  cpSync(join(root, 'screenshots'), join(outDir, 'screenshots'), { recursive: true });
+
+  writeFileSync(join(outDir, 'dossier.json'), buildDossier(outDir, caps));
+  console.log(`QUAY 9 build: ${buildDossier(outDir, caps).byteLength} dossier bytes in ${outDir}`);
+} catch (err) {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`QUAY 9 build: ${message}`);
   process.exit(1);
 }
-
-if (OUT === ROOT || OUT === '/') fail(`refusing to replace ${OUT}`);
-if (!existsSync(join(ROOT, 'game', 'index.html'))) fail('missing game/index.html');
-if (!existsSync(join(ROOT, 'screenshots'))) fail('missing screenshots/');
-
-// /output is a mount, so clear its contents, never the mount root.
-mkdirSync(OUT, { recursive: true });
-for (const name of readdirSync(OUT)) rmSync(join(OUT, name), { recursive: true, force: true });
-cpSync(join(ROOT, 'game'), join(OUT, 'game'), { recursive: true });
-cpSync(join(ROOT, 'screenshots'), join(OUT, 'screenshots'), { recursive: true });
-
-let dossier: Uint8Array;
-try {
-  dossier = buildDossier(OUT, CAPS);
-} catch (error) {
-  fail((error as Error).message);
-}
-writeFileSync(join(OUT, 'dossier.json'), dossier);
-process.stdout.write(`QUAY 9 dossier: ${dossier.length} bytes -> ${relative(ROOT, OUT) || OUT}\n`);
